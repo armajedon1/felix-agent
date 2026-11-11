@@ -66,7 +66,7 @@ func (t *BackgroundWorkerTool) Execute(ctx context.Context, args json.RawMessage
 		startTime := time.Now()
 		log.Printf("[Background Worker] Iniciando tarea '%s': %s", taskName, cmdStr)
 
-		execCmd := exec.Command("/bin/bash", "-c", cmdStr)
+		execCmd := exec.Command("bash", "-c", cmdStr)
 		if workDir != "" {
 			execCmd.Dir = workDir
 		}
