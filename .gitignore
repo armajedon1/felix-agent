@@ -1,0 +1,28 @@
+# Binarios
+bin/felix
+*.exe
+
+# Almacenamiento local y SQLite
+data/*.db
+data/*.db-*
+data/*.log
+data/pairing_code.txt
+
+# Descargas y reportes generados
+data/downloads/*
+!data/downloads/.gitkeep
+data/backups/*
+!data/backups/.gitkeep
+workspace/reports/*
+!workspace/reports/.gitkeep
+workspace/memory/*
+!workspace/memory/.gitkeep
+
+# Secretos y configuracion local activa
+config.json
+.env
+*.tmp
+
+# Archivos de depuracion y temporales
+*.out
+*.test

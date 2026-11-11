@@ -1,0 +1,18 @@
+[Unit]
+Description=Felix - Asistente Autonomo de Ingenieria y DevOps
+After=network.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/opt/felix
+ExecStart=/opt/felix/bin/felix
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+# Variables de entorno opcionales
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

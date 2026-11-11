@@ -1,0 +1,345 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"felix-go/internal/agent"
+	"felix-go/internal/config"
+	"felix-go/internal/digest"
+	"felix-go/internal/health"
+	"felix-go/internal/mcp"
+	"felix-go/internal/memory"
+	"felix-go/internal/scheduler"
+	"felix-go/internal/tools"
+	"felix-go/internal/users"
+	"felix-go/internal/whatsapp"
+)
+
+func runSetupWizard(configPath string) {
+	fmt.Println()
+	fmt.Println("==============================================================")
+	fmt.Println("         FELIX - ASISTENTE AUTONOMO OPEN SOURCE               ")
+	fmt.Println("            Asistente de Configuracion Inicial                ")
+	fmt.Println("==============================================================")
+	fmt.Println()
+
+	reader := bufio.NewReader(os.Stdin)
+
+	cfg, _ := config.LoadConfig(configPath)
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+
+	fmt.Printf("1. Ingrese la direccion del endpoint de inferencia (API Base)\n   [Por defecto: %s]: ", cfg.APIBase)
+	inputBase, _ := reader.ReadString('\n')
+	inputBase = strings.TrimSpace(inputBase)
+	if inputBase != "" {
+		cfg.APIBase = inputBase
+	}
+
+	fmt.Printf("\n2. Ingrese la clave de API (API Key) para inferencia:\n   (Para servidores locales sin autenticacion puede dejarlo vacio): ")
+	inputKey, _ := reader.ReadString('\n')
+	inputKey = strings.TrimSpace(inputKey)
+	if inputKey != "" {
+		cfg.APIKey = inputKey
+	}
+
+	fmt.Printf("\n3. Ingrese el modelo LLM a utilizar\n   [Por defecto: %s]: ", cfg.Model)
+	inputModel, _ := reader.ReadString('\n')
+	inputModel = strings.TrimSpace(inputModel)
+	if inputModel != "" {
+		cfg.Model = inputModel
+	}
+
+	fmt.Printf("\n4. Ingrese la clave de Groq para transcripcion Whisper de audios\n   (Opcional, presione Enter para omitir): ")
+	inputGroq, _ := reader.ReadString('\n')
+	inputGroq = strings.TrimSpace(inputGroq)
+	if inputGroq != "" {
+		cfg.GroqAPIKey = inputGroq
+	}
+
+	if err := cfg.Save(configPath); err != nil {
+		fmt.Printf("\nError guardando configuracion: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\nConfiguracion guardada exitosamente en %s\n", configPath)
+	fmt.Println("Ahora puede iniciar Felix con: ./bin/felix")
+	fmt.Println("==============================================================")
+}
+
+func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "init") {
+		runSetupWizard("config.json")
+		return
+	}
+
+	configPath := flag.String("config", "config.json", "Ruta al archivo config.json")
+	cliPrompt := flag.String("cli", "", "Ejecutar una peticion interactiva directa por linea de comandos y mostrar el bucle de herramientas")
+	setupFlag := flag.Bool("setup", false, "Iniciar el asistente interactivo de configuracion")
+	flag.Parse()
+
+	if *setupFlag {
+		runSetupWizard(*configPath)
+		return
+	}
+
+	log.Println("Iniciando Felix (Agente Autonomo de Ingenieria y DevOps)...")
+
+	// 1. Cargar configuracion
+	cfg, err := config.LoadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("Error cargando configuracion: %v", err)
+	}
+
+	// 2. Inicializar Catalogo de Herramientas (Tool Registry)
+	skillsDir := cfg.SkillsDir
+	reg := tools.NewRegistry()
+	reg.Register(&tools.ExecTool{DefaultWorkDir: cfg.WorkspaceDir})
+	reg.Register(&tools.FileReadTool{})
+	reg.Register(&tools.FileWriteTool{})
+	reg.Register(&tools.FileEditTool{})
+	reg.Register(&tools.FileLsTool{DefaultWorkDir: cfg.WorkspaceDir})
+	reg.Register(&tools.ApplyPatchTool{DefaultWorkDir: cfg.WorkspaceDir})
+	reg.Register(&tools.ProcessTool{})
+	reg.Register(&tools.AntigravityTool{})
+	reg.Register(&tools.PcTaskTool{})
+	reg.Register(&tools.GcliTool{})
+	reg.Register(&tools.HomelabTool{})
+	reg.Register(&tools.WebFetchTool{})
+	reg.Register(&tools.WebSearchTool{})
+	reg.Register(&tools.WeatherTool{})
+	reg.Register(&tools.SqliteQueryTool{})
+	reg.Register(&tools.SkillsListTool{SkillsDir: skillsDir})
+	reg.Register(&tools.SkillsReadTool{SkillsDir: skillsDir})
+	reg.Register(&tools.SkillsWriteTool{SkillsDir: skillsDir})
+	reg.Register(&tools.DocEngineTool{})
+	reg.Register(&tools.NetSentinelTool{})
+	reg.Register(&tools.DockerTool{})
+	reg.Register(&tools.VisionInspectTool{APIBase: cfg.APIBase, APIKey: cfg.APIKey, Model: cfg.Model})
+	reg.Register(&tools.BrowserTool{DownloadsDir: filepath.Join(cfg.DataDir, "downloads")})
+	reg.Register(&tools.WorkstationTool{Host: cfg.WorkstationHost})
+	reg.Register(tools.NewMinecraftTool())
+	reg.Register(&tools.GitTool{DefaultRepoDir: cfg.WorkspaceDir})
+	reg.Register(&tools.TailscaleTool{})
+	reg.Register(&tools.SQLiteInspectorTool{})
+
+	// 3. Inicializar Administrador de Memoria y registrar herramientas
+	memStore := memory.NewStore(cfg.WorkspaceDir, cfg.DataDir)
+	contextMem := memStore.GetContextMemory(memory.MemoryContextOptions{
+		IsAdmin: true,
+		Query:   *cliPrompt,
+	})
+	reg.Register(&tools.MemoryManagerTool{Store: memStore})
+	if memStore.GetIndexer() != nil {
+		reg.Register(&tools.MemorySearchTool{Indexer: memStore.GetIndexer()})
+	}
+
+	// 4. Inicializar Administrador de Historial Persistente en SQLite
+	sessionDBPath := filepath.Join(cfg.DataDir, "sessions.db")
+	histMgr, err := agent.NewHistoryManager(sessionDBPath, 40)
+	if err != nil {
+		log.Fatalf("Error inicializando almacenamiento persistente de sesiones SQLite: %v", err)
+	}
+	defer histMgr.Close()
+	log.Printf("Gestor de sesiones persistentes en SQLite inicializado en %s", sessionDBPath)
+
+	// Inicializar Memoria de Trabajo Persistente (Scratchpad)
+	scratchpadMgr, err := tools.NewScratchpadManager(histMgr.DB())
+	if err != nil {
+		log.Fatalf("Error inicializando administrador de scratchpad SQLite: %v", err)
+	}
+	reg.Register(&tools.ScratchpadTool{Manager: scratchpadMgr})
+
+	// Registrar busqueda y recuperacion en historial de sesiones
+	reg.Register(&tools.SessionSearchTool{DB: histMgr.DB()})
+	reg.Register(&tools.SessionHistoryTool{DB: histMgr.DB()})
+
+	// Registrar gestor de metas y objetivos persistentes
+	reg.Register(&tools.GoalManagerTool{DB: histMgr.DB()})
+
+	// 5. Inicializar Administrador de Usuarios, Roles y Confidencialidad
+	usersDBPath := filepath.Join(cfg.DataDir, "users.db")
+	userMgr, err := users.NewManager(usersDBPath, cfg.AllowedUsers)
+	if err != nil {
+		log.Fatalf("Error inicializando administrador de usuarios SQLite: %v", err)
+	}
+	defer userMgr.Close()
+	log.Printf("Gestor de usuarios y confidencialidad inicializado en %s", usersDBPath)
+
+	// Registrar herramienta de gestion de usuarios y directivas de veto
+	reg.Register(&tools.UsersManagerTool{UserMgr: userMgr})
+
+	// Inicializar Motor Agentico (ReAct Loop) con persistencia en disco
+	engine := agent.NewEngine(cfg, reg, histMgr)
+	engine.SetScratchpadManager(scratchpadMgr)
+
+	// Inicializar Monitor de Telemetria Asincrono y Digest Precomputado
+	digestWatcher := digest.NewWatcher(2 * time.Minute)
+	digestCtx, digestCancel := context.WithCancel(context.Background())
+	defer digestCancel()
+	digestWatcher.StartRunner(digestCtx)
+
+	// 6. Inicializar Planificador de Recordatorios y Tareas
+	schedDBPath := filepath.Join(cfg.DataDir, "reminders.db")
+	sched, err := scheduler.NewScheduler(schedDBPath)
+	if err != nil {
+		log.Printf("[Aviso] No se pudo inicializar scheduler: %v", err)
+	} else {
+		sched.SetDataDir(cfg.DataDir)
+	}
+
+	// Registrar herramienta de gestion de recordatorios
+	reg.Register(&tools.RemindersTool{DBPath: schedDBPath})
+
+	// Registrar herramienta de auto-curacion y versionado de infraestructura
+	infraTool, err := tools.NewInfraTool(sessionDBPath)
+	if err != nil {
+		log.Printf("[Aviso] No se pudo inicializar InfraTool: %v", err)
+	} else {
+		reg.Register(infraTool)
+	}
+
+	defaultJID := cfg.OwnerJID
+
+	// Registrar herramienta de generacion de imagenes (DALL-E 3)
+	reg.Register(&tools.ImageGenerateTool{
+		OpenAIKey:  cfg.OpenAIAPIKey,
+		DataDir:    cfg.DataDir,
+		DefaultJID: defaultJID,
+	})
+
+	// Inicializar Servidores MCP si estan configurados
+	if len(cfg.MCPServers) > 0 {
+		mcpMgr := mcp.NewManager()
+		defer mcpMgr.Close()
+		mcpConfigs := make(map[string]mcp.ServerConfig)
+		for k, v := range cfg.MCPServers {
+			mcpConfigs[k] = mcp.ServerConfig{
+				Command: v.Command,
+				Args:    v.Args,
+				Env:     v.Env,
+			}
+		}
+		_ = mcpMgr.RegisterServers(context.Background(), mcpConfigs, reg)
+	}
+
+	log.Printf("Catalogo de herramientas inicializado: %d herramientas registradas", len(reg.GetOpenAISchemas()))
+
+	// MODO CLI: Permite probar el bucle de herramientas y razonamiento sin conexion a WhatsApp
+	if *cliPrompt != "" {
+		fmt.Printf("\n=== EJECUTANDO PROMPT EN MODO CLI ===\nPrompt: %s\n\n", *cliPrompt)
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+
+		reply, err := engine.Run(ctx, "cli-session", *cliPrompt, contextMem)
+		if err != nil {
+			log.Fatalf("Error en ejecucion agentica: %v", err)
+		}
+
+		if sched != nil {
+			reply = sched.ParseAndSchedule(reply, "cli-chat", "Admin")
+		}
+
+		fmt.Println("\n=== RESPUESTA FINAL DEL AGENTE ===")
+		fmt.Println(reply)
+		fmt.Println("==================================")
+		return
+	}
+
+	// MODO DEMONIO: Inicializar cliente WhatsMeow y canal de WhatsApp
+	log.Println("Iniciando canal de comunicacion WhatsApp...")
+	waDBPath := filepath.Join(cfg.DataDir, "whatsapp.db")
+	waClient, err := whatsapp.NewClient(cfg, engine, sched, memStore, userMgr, digestWatcher, scratchpadMgr, waDBPath)
+	if err != nil {
+		log.Fatalf("Error inicializando cliente WhatsApp: %v", err)
+	}
+
+	engine.SetProgressFunc(func(sessionID, statusText string) {
+		_ = waClient.SendMessage(context.Background(), sessionID, statusText)
+	})
+
+	// Registrar herramientas nativas para enviar mensajes, archivos y notas de voz hacia WhatsApp
+	reg.Register(&tools.SendMessageTool{
+		SendFunc:   waClient.SendMessage,
+		DefaultJID: defaultJID,
+	})
+	reg.Register(&tools.SendFileTool{
+		SendFunc:   waClient.SendFile,
+		DefaultJID: defaultJID,
+	})
+	reg.Register(&tools.SendVoiceTool{
+		SendVoiceFunc: waClient.SendVoice,
+		DefaultJID:    defaultJID,
+	})
+	reg.Register(&tools.ImageGenerateTool{
+		OpenAIKey:    cfg.OpenAIAPIKey,
+		DataDir:      cfg.DataDir,
+		SendFileFunc: waClient.SendFile,
+		DefaultJID:   defaultJID,
+	})
+	reg.Register(&tools.BackgroundWorkerTool{
+		SendFunc: func(chatJID, message string) error {
+			return waClient.SendMessage(context.Background(), chatJID, message)
+		},
+		DefaultJID: defaultJID,
+	})
+
+	// Inicializar Administrador de Subagentes Concurrentes en Go y SQLite
+	subagentMgr, err := agent.NewSubagentManager(histMgr.DB(), engine, func(chatJID, message string) error {
+		return waClient.SendMessage(context.Background(), chatJID, message)
+	}, defaultJID)
+	if err != nil {
+		log.Fatalf("Error inicializando SubagentManager: %v", err)
+	}
+	waClient.SetSubagentManager(subagentMgr)
+	reg.Register(&tools.SubagentSpawnTool{
+		Runner: subagentMgr,
+	})
+
+	// Iniciar despacho autonomo de recordatorios conectados al envio de WhatsApp
+	if sched != nil {
+		schedCtx, schedCancel := context.WithCancel(context.Background())
+		defer schedCancel()
+		sched.StartRunner(schedCtx, func(chatJID, message string) error {
+			return waClient.SendMessage(context.Background(), chatJID, message)
+		}, defaultJID)
+	}
+
+	// Iniciar servidor HTTP interno de salud, metricas y webhooks
+	healthServer := health.NewServer("0.0.0.0:"+cfg.HealthPort, engine, waClient, memStore, subagentMgr)
+	healthServer.Start()
+	defer func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer stopCancel()
+		_ = healthServer.Stop(stopCtx)
+	}()
+
+	// Iniciar conexion a WhatsApp
+	connCtx, connCancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer connCancel()
+	if err := waClient.Start(connCtx); err != nil {
+		log.Fatalf("Error conectando a WhatsApp: %v", err)
+	}
+
+	// Manejo de senales para apagado ordenado
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	log.Printf("Felix listo y operando en modo demonio. Directorio de datos: %s", filepath.Clean(cfg.DataDir))
+	sig := <-sigChan
+	log.Printf("Senal recibida (%v). Finalizando limpiamente...", sig)
+
+	waClient.Disconnect()
+	log.Println("Felix detenido ordenadamente.")
+}
