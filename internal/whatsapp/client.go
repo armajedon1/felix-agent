@@ -709,10 +709,12 @@ func (d *chatDebouncer) processQueue() {
 	log.Printf("[Procesando Turno Unificado %s] De: %s (%s) | Longitud: %d caracteres", chatJID, senderName, senderJID, len(combinedText))
 
 	// Onboarding: Si aun no hay ningun admin registrado, el primer remitente se convierte en Administrador Principal
+	justPromoted := false
 	if c.userMgr != nil && !c.userMgr.IsAnyAdminConfigured() {
 		if promoted, _ := c.userMgr.EnsureFirstAdmin(senderJID, senderName); promoted {
 			_ = c.cfg.SetOwner(senderJID, "config.json")
 			log.Printf("[Onboarding] Primer usuario %s (%s) registrado como Administrador Principal", senderName, senderJID)
+			justPromoted = true
 		}
 	}
 
@@ -740,27 +742,17 @@ func (d *chatDebouncer) processQueue() {
 		return
 	}
 
+	// Si acaba de ser promovido como administrador, enviarle el menu de bienvenida y configuracion rapida
+	if justPromoted {
+		welcomeMsg := c.GetOnboardingMenu(senderName)
+		_ = c.SendMessage(context.Background(), chatJID, welcomeMsg)
+		return
+	}
+
 	// Verificar si la inferencia requiere configuracion inicial
 	needsConfig := c.cfg.APIBase == "" || (c.cfg.APIKey == "" && !strings.Contains(c.cfg.APIBase, "127.0.0.1") && !strings.Contains(c.cfg.APIBase, "localhost"))
 	if needsConfig && isAdmin {
-		onboardingMsg := "*CONFIGURACION INICIAL REQUERIDA*\n\n" +
-			"Para habilitar el razonamiento y respuestas inteligentes de Felix, configure su proveedor de IA enviando:\n\n" +
-			"*1. Endpoint de Inferencia (API Base)*\n" +
-			"   `/config apibase <url>`\n" +
-			"   Ejemplos:\n" +
-			"   - OpenAI: `/config apibase https://api.openai.com/v1`\n" +
-			"   - Gemini: `/config apibase https://generativelanguage.googleapis.com/v1beta`\n" +
-			"   - Groq: `/config apibase https://api.groq.com/openai/v1`\n" +
-			"   - Proxy Local: `/config apibase http://127.0.0.1:8045/v1`\n" +
-			"   - Ollama: `/config apibase http://localhost:11434/v1`\n\n" +
-			"*2. Clave de API*\n" +
-			"   `/config apikey <tu_api_key>`\n\n" +
-			"*3. Modelo LLM*\n" +
-			"   `/config model <nombre_modelo>`\n" +
-			"   Ejemplos: `gemini-2.5-flash`, `gpt-4o`, `llama-3.3-70b-versatile`\n\n" +
-			"*4. Ver estado*\n" +
-			"   `/config status`"
-		_ = c.SendMessage(context.Background(), chatJID, onboardingMsg)
+		_ = c.SendMessage(context.Background(), chatJID, c.GetOnboardingMenu(senderName))
 		return
 	}
 

@@ -101,6 +101,28 @@ func TestHandleConfigCommand(t *testing.T) {
 	if cfg.APIKey != "sk-1234567890abcdef" {
 		t.Errorf("APIKey no se actualizo correctamente: %s", cfg.APIKey)
 	}
+
+	// Probar preset Gemini
+	replyGemini := c.handleConfigCommand([]string{"/config", "gemini", "AIzaSyTestKey123456"})
+	if !strings.Contains(replyGemini, "PROVEEDOR CONFIGURADO") || !strings.Contains(replyGemini, "Google Gemini") {
+		t.Errorf("Respuesta inesperada para preset Gemini: %s", replyGemini)
+	}
+	if cfg.Provider != "gemini" || cfg.Model != "gemini-2.5-flash" {
+		t.Errorf("Preset Gemini no configuro provider o modelo: %s / %s", cfg.Provider, cfg.Model)
+	}
+
+	// Probar /menu
+	handledMenu, replyMenu := c.HandleSlashCommand("test@lid", "test@lid", "/menu", true)
+	if !handledMenu || !strings.Contains(replyMenu, "BIENVENIDO A FELIX") {
+		t.Errorf("Respuesta inesperada para /menu: %s", replyMenu)
+	}
+
+	// Probar pool de claves
+	replyKeysAdd := c.handleConfigCommand([]string{"/config", "keys", "add", "AIzaSySecondKey789"})
+	if !strings.Contains(replyKeysAdd, "agregada al pool") {
+		t.Errorf("Respuesta inesperada para /config keys add: %s", replyKeysAdd)
+	}
+
 	_ = cfgPath
 }
 

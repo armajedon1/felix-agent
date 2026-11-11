@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"felix-go/internal/inference"
 )
 
 // Config define las opciones de configuracion del agente Felix.
@@ -16,8 +19,10 @@ type Config struct {
 	PhoneNumber       string            `json:"phone_number,omitempty"`
 	AllowedUsers      []string          `json:"allowed_users"`
 	AllowedGroups     []string          `json:"allowed_groups"`
+	Provider          string            `json:"provider,omitempty"`
 	APIBase           string            `json:"api_base"`
 	APIKey            string            `json:"api_key"`
+	APIKeys           []string          `json:"api_keys,omitempty"`
 	OpenAIAPIKey      string            `json:"openai_api_key,omitempty"`
 	GroqAPIKey        string            `json:"groq_api_key,omitempty"`
 	FallbackAPIBase   string            `json:"fallback_api_base,omitempty"`
@@ -46,8 +51,10 @@ func DefaultConfig() *Config {
 		PhoneNumber:       "",
 		AllowedUsers:      []string{},
 		AllowedGroups:     []string{},
+		Provider:          "antigravity",
 		APIBase:           "http://127.0.0.1:8045/v1",
 		APIKey:            "",
+		APIKeys:           []string{},
 		OpenAIAPIKey:      "",
 		GroqAPIKey:        "",
 		FallbackAPIBase:   "https://api.groq.com/openai/v1",
@@ -182,6 +189,52 @@ func (c *Config) SetInferenceCredentials(apiBase, apiKey, model, savePath string
 	}
 	if model != "" {
 		c.Model = model
+	}
+	c.mu.Unlock()
+
+	if savePath != "" {
+		return c.Save(savePath)
+	}
+	return nil
+}
+
+// ApplyPreset configura automaticamente un proveedor soportado (gemini, openai, groq, ollama, antigravity).
+func (c *Config) ApplyPreset(provider, apiKey, model, savePath string) error {
+	c.mu.Lock()
+	p, ok := inference.GetPreset(provider)
+	if ok {
+		c.Provider = string(p.Type)
+		c.APIBase = p.BaseURL
+		if model != "" {
+			c.Model = model
+		} else {
+			c.Model = p.DefaultModel
+		}
+	} else {
+		c.Provider = "custom"
+		if model != "" {
+			c.Model = model
+		}
+	}
+
+	if apiKey != "" {
+		c.APIKey = apiKey
+		found := false
+		for _, k := range c.APIKeys {
+			if k == apiKey {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.APIKeys = append(c.APIKeys, apiKey)
+		}
+	}
+
+	if strings.ToLower(provider) == "groq" && apiKey != "" {
+		c.GroqAPIKey = apiKey
+	} else if strings.ToLower(provider) == "openai" && apiKey != "" {
+		c.OpenAIAPIKey = apiKey
 	}
 	c.mu.Unlock()
 

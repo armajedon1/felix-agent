@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"felix-go/internal/agent"
+	"felix-go/internal/inference"
 	"felix-go/internal/memory"
 	"felix-go/internal/whatsapp"
 )
@@ -23,6 +24,7 @@ type Server struct {
 	waClient    *whatsapp.Client
 	memStore    *memory.Store
 	subagentMgr *agent.SubagentManager
+	gateway     *inference.Gateway
 	startTime   time.Time
 }
 
@@ -61,15 +63,34 @@ func NewServer(addr string, eng *agent.Engine, wa *whatsapp.Client, mem *memory.
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/notify", s.handleNotify)
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		if s.gateway != nil {
+			s.gateway.HandleChatCompletions(w, r)
+		} else {
+			http.Error(w, "Inference Gateway no inicializado", http.StatusServiceUnavailable)
+		}
+	})
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		if s.gateway != nil {
+			s.gateway.HandleModels(w, r)
+		} else {
+			http.Error(w, "Inference Gateway no inicializado", http.StatusServiceUnavailable)
+		}
+	})
 
 	s.server = &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return s
+}
+
+// SetGateway enlaza la puerta de enlace de inferencia integrada.
+func (s *Server) SetGateway(gw *inference.Gateway) {
+	s.gateway = gw
 }
 
 // Start inicia el servidor en segundo plano e inicia el latido push opcional si esta configurado.

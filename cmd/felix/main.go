@@ -17,6 +17,7 @@ import (
 	"felix-go/internal/config"
 	"felix-go/internal/digest"
 	"felix-go/internal/health"
+	"felix-go/internal/inference"
 	"felix-go/internal/mcp"
 	"felix-go/internal/memory"
 	"felix-go/internal/scheduler"
@@ -40,32 +41,73 @@ func runSetupWizard(configPath string) {
 		cfg = config.DefaultConfig()
 	}
 
-	fmt.Printf("1. Ingrese la direccion del endpoint de inferencia (API Base)\n   [Por defecto: %s]: ", cfg.APIBase)
-	inputBase, _ := reader.ReadString('\n')
-	inputBase = strings.TrimSpace(inputBase)
-	if inputBase != "" {
-		cfg.APIBase = inputBase
+	fmt.Println("Seleccione su proveedor de inferencia:")
+	fmt.Println("  1) Google Gemini (Recomendado - gemini-2.5-flash)")
+	fmt.Println("  2) OpenAI (gpt-4o)")
+	fmt.Println("  3) Groq Cloud (llama-3.3-70b-versatile + Whisper)")
+	fmt.Println("  4) Ollama Local (http://localhost:11434/v1)")
+	fmt.Println("  5) Antigravity Tools / Proxy Local (http://127.0.0.1:8045/v1)")
+	fmt.Println("  6) Endpoint Personalizado / Custom")
+	fmt.Print("Opcion [1-6, por defecto 1]: ")
+
+	opcion, _ := reader.ReadString('\n')
+	opcion = strings.TrimSpace(opcion)
+	if opcion == "" {
+		opcion = "1"
 	}
 
-	fmt.Printf("\n2. Ingrese la clave de API (API Key) para inferencia:\n   (Para servidores locales sin autenticacion puede dejarlo vacio): ")
-	inputKey, _ := reader.ReadString('\n')
-	inputKey = strings.TrimSpace(inputKey)
-	if inputKey != "" {
-		cfg.APIKey = inputKey
+	switch opcion {
+	case "1":
+		fmt.Print("\nIngrese su API Key de Google Gemini (de https://aistudio.google.com/): ")
+		inputKey, _ := reader.ReadString('\n')
+		inputKey = strings.TrimSpace(inputKey)
+		_ = cfg.ApplyPreset("gemini", inputKey, "", "")
+	case "2":
+		fmt.Print("\nIngrese su API Key de OpenAI (sk-...): ")
+		inputKey, _ := reader.ReadString('\n')
+		inputKey = strings.TrimSpace(inputKey)
+		_ = cfg.ApplyPreset("openai", inputKey, "", "")
+	case "3":
+		fmt.Print("\nIngrese su API Key de Groq (gsk_...): ")
+		inputKey, _ := reader.ReadString('\n')
+		inputKey = strings.TrimSpace(inputKey)
+		_ = cfg.ApplyPreset("groq", inputKey, "", "")
+	case "4":
+		_ = cfg.ApplyPreset("ollama", "", "", "")
+		fmt.Println("\nConfigurado para Ollama en http://localhost:11434/v1 con modelo llama3.")
+	case "5":
+		_ = cfg.ApplyPreset("antigravity", "", "", "")
+		fmt.Println("\nConfigurado para Antigravity Tools en http://127.0.0.1:8045/v1.")
+	default:
+		fmt.Printf("\n1. Ingrese la direccion del endpoint de inferencia (API Base)\n   [Por defecto: %s]: ", cfg.APIBase)
+		inputBase, _ := reader.ReadString('\n')
+		inputBase = strings.TrimSpace(inputBase)
+		if inputBase != "" {
+			cfg.APIBase = inputBase
+		}
+
+		fmt.Printf("\n2. Ingrese la clave de API (API Key) para inferencia:\n   (Para servidores locales sin autenticacion puede dejarlo vacio): ")
+		inputKey, _ := reader.ReadString('\n')
+		inputKey = strings.TrimSpace(inputKey)
+		if inputKey != "" {
+			cfg.APIKey = inputKey
+		}
+
+		fmt.Printf("\n3. Ingrese el modelo LLM a utilizar\n   [Por defecto: %s]: ", cfg.Model)
+		inputModel, _ := reader.ReadString('\n')
+		inputModel = strings.TrimSpace(inputModel)
+		if inputModel != "" {
+			cfg.Model = inputModel
+		}
 	}
 
-	fmt.Printf("\n3. Ingrese el modelo LLM a utilizar\n   [Por defecto: %s]: ", cfg.Model)
-	inputModel, _ := reader.ReadString('\n')
-	inputModel = strings.TrimSpace(inputModel)
-	if inputModel != "" {
-		cfg.Model = inputModel
-	}
-
-	fmt.Printf("\n4. Ingrese la clave de Groq para transcripcion Whisper de audios\n   (Opcional, presione Enter para omitir): ")
-	inputGroq, _ := reader.ReadString('\n')
-	inputGroq = strings.TrimSpace(inputGroq)
-	if inputGroq != "" {
-		cfg.GroqAPIKey = inputGroq
+	if cfg.GroqAPIKey == "" && opcion != "3" {
+		fmt.Printf("\nIngrese la clave de Groq para transcripcion Whisper de notas de voz en WhatsApp\n   (Opcional, presione Enter para omitir): ")
+		inputGroq, _ := reader.ReadString('\n')
+		inputGroq = strings.TrimSpace(inputGroq)
+		if inputGroq != "" {
+			cfg.GroqAPIKey = inputGroq
+		}
 	}
 
 	if err := cfg.Save(configPath); err != nil {
@@ -316,8 +358,10 @@ func main() {
 		}, defaultJID)
 	}
 
-	// Iniciar servidor HTTP interno de salud, metricas y webhooks
+	// Iniciar servidor HTTP interno de salud, metricas, gateway de inferencia y webhooks
 	healthServer := health.NewServer("0.0.0.0:"+cfg.HealthPort, engine, waClient, memStore, subagentMgr)
+	gw := inference.NewGateway(cfg.APIBase, cfg.Model, engine.GetKeyPool())
+	healthServer.SetGateway(gw)
 	healthServer.Start()
 	defer func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)

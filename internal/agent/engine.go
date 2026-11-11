@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"felix-go/internal/config"
+	"felix-go/internal/inference"
 	"felix-go/internal/tools"
 )
 
@@ -89,6 +90,7 @@ type Engine struct {
 	history       *HistoryManager
 	scratchpad    *tools.ScratchpadManager
 	httpClient    *http.Client
+	keyPool       *inference.KeyPool
 	llmMu         sync.RWMutex
 	llmStatus     LLMStatus
 	cooldownUntil time.Time
@@ -110,6 +112,40 @@ func (e *Engine) SetScratchpadManager(sm *tools.ScratchpadManager) {
 	e.scratchpad = sm
 }
 
+func (e *Engine) GetKeyPool() *inference.KeyPool {
+	return e.keyPool
+}
+
+func (e *Engine) SetKeyPool(kp *inference.KeyPool) {
+	e.llmMu.Lock()
+	defer e.llmMu.Unlock()
+	e.keyPool = kp
+}
+
+func (e *Engine) UpdateCredentials(apiBase, apiKey, model string, keys []string) {
+	e.llmMu.Lock()
+	defer e.llmMu.Unlock()
+	if apiBase != "" {
+		e.cfg.APIBase = apiBase
+		e.llmStatus.PrimaryEndpoint = apiBase
+	}
+	if model != "" {
+		e.cfg.Model = model
+		e.llmStatus.PrimaryModel = model
+	}
+	if apiKey != "" {
+		e.cfg.APIKey = apiKey
+	}
+	if len(keys) > 0 {
+		e.cfg.APIKeys = keys
+		if e.keyPool != nil {
+			e.keyPool.SetKeys(keys)
+		}
+	} else if apiKey != "" && e.keyPool != nil {
+		e.keyPool.SetKeys([]string{apiKey})
+	}
+}
+
 func NewEngine(cfg *config.Config, reg *tools.Registry, hist *HistoryManager) *Engine {
 	tr := &http.Transport{
 		MaxIdleConns:          100,
@@ -120,10 +156,18 @@ func NewEngine(cfg *config.Config, reg *tools.Registry, hist *HistoryManager) *E
 		ForceAttemptHTTP2:     true,
 	}
 
+	var initialKeys []string
+	if len(cfg.APIKeys) > 0 {
+		initialKeys = append(initialKeys, cfg.APIKeys...)
+	} else if cfg.APIKey != "" {
+		initialKeys = append(initialKeys, cfg.APIKey)
+	}
+
 	return &Engine{
 		cfg:        cfg,
 		registry:   reg,
 		history:    hist,
+		keyPool:    inference.NewKeyPool(initialKeys...),
 		httpClient: &http.Client{
 			Transport: tr,
 			Timeout:   120 * time.Second,
@@ -393,23 +437,45 @@ func (e *Engine) Run(ctx context.Context, sessionID, userInput string, extraSyst
 	return "Solicitud procesada con exito en base a los datos del sistema.", nil
 }
 
+func (e *Engine) getActiveKey() string {
+	if e.keyPool != nil && e.keyPool.Count() > 0 {
+		return e.keyPool.GetCurrentKey()
+	}
+	return e.cfg.APIKey
+}
+
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "429") || strings.Contains(s, "resource_exhausted") || strings.Contains(s, "rate limit") || strings.Contains(s, "quota")
+}
+
 func (e *Engine) executeCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	hasFallback := e.cfg.FallbackAPIBase != ""
 
-	// Si NO hay fallback configurado (modo exclusivo Antigravity Tools):
-	// Reintentar hasta 3 veces con espera progresiva ante fallas transitorias sin conmutar de modelo
+	// Si NO hay fallback configurado:
+	// Reintentar hasta 3 veces con espera progresiva y rotacion de claves ante 429
 	if !hasFallback {
 		const maxRetries = 3
 		var lastErr error
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			resp, err := e.doRequest(ctx, e.cfg.APIBase, e.cfg.APIKey, e.cfg.Model, req)
+			activeKey := e.getActiveKey()
+			resp, err := e.doRequest(ctx, e.cfg.APIBase, activeKey, e.cfg.Model, req)
 			if err == nil {
 				e.recordSuccess(true, resp.Usage)
 				return resp, nil
 			}
 			lastErr = err
 			e.recordFailure(err)
-			log.Printf("[LLM Antigravity Tools] Falla en intento %d/%d (%v). Reintentando...", attempt, maxRetries, err)
+
+			if isRateLimitError(err) && e.keyPool != nil && e.keyPool.Count() > 1 {
+				_ = e.keyPool.Rotate()
+				log.Printf("[KeyPool] Cuota agotada (429/RateLimit). Rotando a siguiente clave de API...")
+			} else {
+				log.Printf("[LLM Engine] Falla en intento %d/%d (%v). Reintentando...", attempt, maxRetries, err)
+			}
 
 			if attempt < maxRetries {
 				select {
@@ -419,7 +485,7 @@ func (e *Engine) executeCompletion(ctx context.Context, req ChatCompletionReques
 				}
 			}
 		}
-		return nil, fmt.Errorf("error llamando al proveedor exclusivo Antigravity Tools (%s) tras %d intentos: %w", e.cfg.APIBase, maxRetries, lastErr)
+		return nil, fmt.Errorf("error llamando al proveedor de inferencia (%s) tras %d intentos: %w", e.cfg.APIBase, maxRetries, lastErr)
 	}
 
 	e.llmMu.RLock()
@@ -428,10 +494,22 @@ func (e *Engine) executeCompletion(ctx context.Context, req ChatCompletionReques
 
 	// 1. Intento con proveedor primario si no esta en cooldown
 	if !inCooldown {
-		resp, err := e.doRequest(ctx, e.cfg.APIBase, e.cfg.APIKey, e.cfg.Model, req)
+		activeKey := e.getActiveKey()
+		resp, err := e.doRequest(ctx, e.cfg.APIBase, activeKey, e.cfg.Model, req)
 		if err == nil {
 			e.recordSuccess(true, resp.Usage)
 			return resp, nil
+		}
+
+		if isRateLimitError(err) && e.keyPool != nil && e.keyPool.Count() > 1 {
+			_ = e.keyPool.Rotate()
+			log.Printf("[KeyPool] Cuota agotada en primario. Rotando clave e intentando de inmediato...")
+			activeKey = e.getActiveKey()
+			resp, err = e.doRequest(ctx, e.cfg.APIBase, activeKey, e.cfg.Model, req)
+			if err == nil {
+				e.recordSuccess(true, resp.Usage)
+				return resp, nil
+			}
 		}
 
 		// Registrar falla del primario
@@ -530,7 +608,7 @@ func (e *Engine) probePrimaryRecovery() {
 		ToolChoice: "none",
 	}
 
-	resp, err := e.doRequest(probeCtx, e.cfg.APIBase, e.cfg.APIKey, e.cfg.Model, probeReq)
+	resp, err := e.doRequest(probeCtx, e.cfg.APIBase, e.getActiveKey(), e.cfg.Model, probeReq)
 	if err == nil && len(resp.Choices) > 0 {
 		e.llmMu.Lock()
 		e.llmStatus.PrimaryHealthy = true

@@ -262,8 +262,14 @@ func (c *Client) HandleSlashCommand(chatJID, senderJID, rawText string, isAdmin 
 	case "/services", "/servicios":
 		return true, c.getMonitoredServicesStatus()
 
-	case "/config", "/setup":
+	case "/config":
 		return true, c.handleConfigCommand(parts)
+
+	case "/menu", "/setup":
+		if len(parts) > 1 {
+			return true, c.handleConfigCommand(parts)
+		}
+		return true, c.GetOnboardingMenu("")
 
 	case "/voz", "/voice":
 		action := ""
@@ -894,6 +900,39 @@ func (c *Client) getMonitoredServicesStatus() string {
 	return strings.TrimSpace(sb.String())
 }
 
+// GetOnboardingMenu genera el menu interactivo de bienvenida y configuracion rapida para WhatsApp.
+func (c *Client) GetOnboardingMenu(senderName string) string {
+	name := senderName
+	if name == "" {
+		name = "Administrador"
+	}
+	return fmt.Sprintf("*BIENVENIDO A FELIX (AGENTE AUTONOMO)*\n"+
+		"Hola %s. Has sido registrado automaticamente como Administrador Principal.\n\n"+
+		"Para activar la inteligencia artificial de inmediato, selecciona y envia una de las siguientes opciones (copia y pega la linea completa):\n\n"+
+		"*OPCION 1: GOOGLE GEMINI (Recomendado)*\n"+
+		"`/config gemini <TU_API_KEY>`\n"+
+		"Clave gratuita: https://aistudio.google.com/\n\n"+
+		"*OPCION 2: OPENAI (GPT-4o)*\n"+
+		"`/config openai <TU_API_KEY>`\n"+
+		"Clave: https://platform.openai.com/api-keys\n\n"+
+		"*OPCION 3: GROQ (Ultra-rapido + Transcripcion Whisper)*\n"+
+		"`/config groq <TU_API_KEY>`\n"+
+		"Clave gratuita: https://console.groq.com/keys\n\n"+
+		"*OPCION 4: OLLAMA LOCAL (Sin claves de API)*\n"+
+		"`/config ollama`\n"+
+		"Conecta a servidor local en http://localhost:11434/v1\n\n"+
+		"*OPCION 5: ANTIGRAVITY TOOLS / PROXY LOCAL*\n"+
+		"`/config antigravity`\n"+
+		"Conecta a proxy local en http://127.0.0.1:8045/v1\n\n"+
+		"*OPCION 6: MULTIPLES CLAVES (Rotacion automatica 429)*\n"+
+		"`/config keys add <OTRA_API_KEY>`\n\n"+
+		"*OPCION 7: ENDPOINT PERSONALIZADO*\n"+
+		"`/config apibase <URL>`\n"+
+		"`/config apikey <CLAVE>`\n"+
+		"`/config model <MODELO>`\n\n"+
+		"Envia `/config status` para verificar el estado actual o `/menu` para ver estas opciones nuevamente.", name)
+}
+
 func (c *Client) handleConfigCommand(parts []string) string {
 	subcmd := ""
 	if len(parts) > 1 {
@@ -901,6 +940,174 @@ func (c *Client) handleConfigCommand(parts []string) string {
 	}
 
 	switch subcmd {
+	case "gemini":
+		if len(parts) < 3 {
+			return "*Uso:* `/config gemini <clave-api> [modelo]`\nEjemplo: `/config gemini AIzaSy...`\nClave gratuita en: https://aistudio.google.com/"
+		}
+		key := strings.TrimSpace(parts[2])
+		model := ""
+		if len(parts) >= 4 {
+			model = strings.TrimSpace(parts[3])
+		}
+		if err := c.cfg.ApplyPreset("gemini", key, model, "config.json"); err != nil {
+			return fmt.Sprintf("Error aplicando preset Gemini: %v", err)
+		}
+		if c.engine != nil {
+			c.engine.UpdateCredentials(c.cfg.APIBase, key, c.cfg.Model, c.cfg.APIKeys)
+		}
+		masked := key
+		if len(masked) > 8 {
+			masked = masked[:4] + "..." + masked[len(masked)-4:]
+		}
+		return fmt.Sprintf("*PROVEEDOR CONFIGURADO CON EXITO*\n\n"+
+			"- *Proveedor:* Google Gemini\n"+
+			"- *Endpoint:* `%s`\n"+
+			"- *Modelo:* `%s`\n"+
+			"- *API Key:* `%s`\n\n"+
+			"Felix esta listo para operar. Enviame cualquier mensaje o tarea para comenzar.", c.cfg.APIBase, c.cfg.Model, masked)
+
+	case "openai":
+		if len(parts) < 3 {
+			return "*Uso:* `/config openai <clave-api> [modelo]`\nEjemplo: `/config openai sk-...`"
+		}
+		key := strings.TrimSpace(parts[2])
+		model := ""
+		if len(parts) >= 4 {
+			model = strings.TrimSpace(parts[3])
+		}
+		if err := c.cfg.ApplyPreset("openai", key, model, "config.json"); err != nil {
+			return fmt.Sprintf("Error aplicando preset OpenAI: %v", err)
+		}
+		c.whisper = NewWhisperClient(c.cfg.GroqAPIKey, key)
+		if c.engine != nil {
+			c.engine.UpdateCredentials(c.cfg.APIBase, key, c.cfg.Model, c.cfg.APIKeys)
+		}
+		masked := key
+		if len(masked) > 8 {
+			masked = masked[:4] + "..." + masked[len(masked)-4:]
+		}
+		return fmt.Sprintf("*PROVEEDOR CONFIGURADO CON EXITO*\n\n"+
+			"- *Proveedor:* OpenAI Oficial\n"+
+			"- *Endpoint:* `%s`\n"+
+			"- *Modelo:* `%s`\n"+
+			"- *API Key:* `%s`\n\n"+
+			"Felix esta listo para operar.", c.cfg.APIBase, c.cfg.Model, masked)
+
+	case "groq":
+		if len(parts) < 3 {
+			return "*Uso:* `/config groq <clave-api> [modelo]`\nEjemplo: `/config groq gsk_...`\nClave gratuita en: https://console.groq.com/keys"
+		}
+		key := strings.TrimSpace(parts[2])
+		model := ""
+		if len(parts) >= 4 {
+			model = strings.TrimSpace(parts[3])
+		}
+		if err := c.cfg.ApplyPreset("groq", key, model, "config.json"); err != nil {
+			return fmt.Sprintf("Error aplicando preset Groq: %v", err)
+		}
+		c.whisper = NewWhisperClient(key, c.cfg.OpenAIAPIKey)
+		if c.engine != nil {
+			c.engine.UpdateCredentials(c.cfg.APIBase, key, c.cfg.Model, c.cfg.APIKeys)
+		}
+		masked := key
+		if len(masked) > 8 {
+			masked = masked[:4] + "..." + masked[len(masked)-4:]
+		}
+		return fmt.Sprintf("*PROVEEDOR CONFIGURADO CON EXITO*\n\n"+
+			"- *Proveedor:* Groq Cloud (LPU)\n"+
+			"- *Endpoint:* `%s`\n"+
+			"- *Modelo:* `%s`\n"+
+			"- *API Key:* `%s`\n"+
+			"- *Transcripcion Whisper:* Activada\n\n"+
+			"Felix esta listo para operar.", c.cfg.APIBase, c.cfg.Model, masked)
+
+	case "ollama":
+		model := ""
+		if len(parts) >= 3 {
+			model = strings.TrimSpace(parts[2])
+		}
+		if err := c.cfg.ApplyPreset("ollama", "", model, "config.json"); err != nil {
+			return fmt.Sprintf("Error aplicando preset Ollama: %v", err)
+		}
+		if c.engine != nil {
+			c.engine.UpdateCredentials(c.cfg.APIBase, "", c.cfg.Model, nil)
+		}
+		return fmt.Sprintf("*PROVEEDOR CONFIGURADO CON EXITO*\n\n"+
+			"- *Proveedor:* Ollama Local\n"+
+			"- *Endpoint:* `%s`\n"+
+			"- *Modelo:* `%s`\n\n"+
+			"Felix esta conectado a tu servidor Ollama local.", c.cfg.APIBase, c.cfg.Model)
+
+	case "antigravity":
+		url := ""
+		if len(parts) >= 3 {
+			url = strings.TrimSpace(parts[2])
+		}
+		if err := c.cfg.ApplyPreset("antigravity", "", "", "config.json"); err != nil {
+			return fmt.Sprintf("Error aplicando preset Antigravity: %v", err)
+		}
+		if url != "" {
+			c.cfg.APIBase = url
+			_ = c.cfg.Save("config.json")
+		}
+		if c.engine != nil {
+			c.engine.UpdateCredentials(c.cfg.APIBase, "", c.cfg.Model, nil)
+		}
+		return fmt.Sprintf("*PROVEEDOR CONFIGURADO CON EXITO*\n\n"+
+			"- *Proveedor:* Antigravity Tools / Proxy Local\n"+
+			"- *Endpoint:* `%s`\n"+
+			"- *Modelo:* `%s`\n\n"+
+			"Felix esta conectado al proxy local.", c.cfg.APIBase, c.cfg.Model)
+
+	case "keys", "pool":
+		action := ""
+		if len(parts) >= 3 {
+			action = strings.ToLower(parts[2])
+		}
+		switch action {
+		case "add":
+			if len(parts) < 4 {
+				return "*Uso:* `/config keys add <clave-adicional>`"
+			}
+			newK := strings.TrimSpace(parts[3])
+			c.cfg.APIKeys = append(c.cfg.APIKeys, newK)
+			_ = c.cfg.Save("config.json")
+			if c.engine != nil && c.engine.GetKeyPool() != nil {
+				c.engine.GetKeyPool().AddKey(newK)
+			}
+			total := 1
+			if c.engine != nil && c.engine.GetKeyPool() != nil {
+				total = c.engine.GetKeyPool().Count()
+			}
+			return fmt.Sprintf("*Clave de API agregada al pool de rotacion.*\nTotal claves activas en rotacion: %d", total)
+		case "clear":
+			c.cfg.APIKeys = nil
+			_ = c.cfg.Save("config.json")
+			if c.engine != nil && c.engine.GetKeyPool() != nil {
+				c.engine.GetKeyPool().SetKeys([]string{c.cfg.APIKey})
+			}
+			return "*Pool de claves vaciado.* Se mantiene unicamente la clave principal."
+		default:
+			masked := []string{}
+			if c.engine != nil && c.engine.GetKeyPool() != nil {
+				masked = c.engine.GetKeyPool().GetAllMasked()
+			}
+			if len(masked) == 0 && c.cfg.APIKey != "" {
+				k := c.cfg.APIKey
+				if len(k) > 8 {
+					k = k[:4] + "..." + k[len(k)-4:]
+				}
+				masked = append(masked, k)
+			}
+			return fmt.Sprintf("*POOL DE CLAVES (ROTACION AUTOMATICA 429)*\n"+
+				"- Total claves activas: %d\n"+
+				"- Claves: %s\n\n"+
+				"Para agregar mas claves: `/config keys add <clave>`", len(masked), strings.Join(masked, ", "))
+		}
+
+	case "menu":
+		return c.GetOnboardingMenu("")
+
 	case "apibase", "endpoint", "url":
 		if len(parts) < 3 {
 			return "*Uso:* `/config apibase <url>`\nEjemplos:\n- `/config apibase http://127.0.0.1:8045/v1`\n- `/config apibase https://api.openai.com/v1`\n- `/config apibase https://generativelanguage.googleapis.com/v1beta`\n- `/config apibase https://api.groq.com/openai/v1`\n- `/config apibase http://localhost:11434/v1`"
@@ -908,6 +1115,9 @@ func (c *Client) handleConfigCommand(parts []string) string {
 		newBase := strings.TrimSpace(parts[2])
 		c.cfg.APIBase = newBase
 		_ = c.cfg.Save("config.json")
+		if c.engine != nil {
+			c.engine.UpdateCredentials(newBase, "", "", nil)
+		}
 		return fmt.Sprintf("*API Base actualizada con exito:*\n`%s`\n(Persistido en config.json)", newBase)
 
 	case "apikey", "key":
@@ -917,6 +1127,9 @@ func (c *Client) handleConfigCommand(parts []string) string {
 		newKey := strings.TrimSpace(parts[2])
 		c.cfg.APIKey = newKey
 		_ = c.cfg.Save("config.json")
+		if c.engine != nil {
+			c.engine.UpdateCredentials("", newKey, "", []string{newKey})
+		}
 		masked := newKey
 		if len(masked) > 8 {
 			masked = masked[:4] + "..." + masked[len(masked)-4:]
@@ -930,27 +1143,10 @@ func (c *Client) handleConfigCommand(parts []string) string {
 		newModel := strings.TrimSpace(parts[2])
 		c.cfg.Model = newModel
 		_ = c.cfg.Save("config.json")
+		if c.engine != nil {
+			c.engine.UpdateCredentials("", "", newModel, nil)
+		}
 		return fmt.Sprintf("*Modelo LLM actualizado con exito:*\n`%s`", newModel)
-
-	case "groq":
-		if len(parts) < 3 {
-			return "*Uso:* `/config groq <clave-groq>`"
-		}
-		newGroq := strings.TrimSpace(parts[2])
-		c.cfg.GroqAPIKey = newGroq
-		_ = c.cfg.Save("config.json")
-		c.whisper = NewWhisperClient(newGroq, c.cfg.OpenAIAPIKey)
-		return "*Clave de Groq guardada con exito.*\nTranscripcion Whisper de notas de voz actualizada."
-
-	case "openai":
-		if len(parts) < 3 {
-			return "*Uso:* `/config openai <clave-openai>`"
-		}
-		newOpenAI := strings.TrimSpace(parts[2])
-		c.cfg.OpenAIAPIKey = newOpenAI
-		_ = c.cfg.Save("config.json")
-		c.whisper = NewWhisperClient(c.cfg.GroqAPIKey, newOpenAI)
-		return "*Clave de OpenAI guardada con exito.*"
 
 	case "workstation":
 		if len(parts) < 3 {
@@ -1005,6 +1201,12 @@ func (c *Client) handleConfigCommand(parts []string) string {
 				keyStatus = "CONFIGURADA"
 			}
 		}
+		keysInPool := 0
+		if c.engine != nil && c.engine.GetKeyPool() != nil {
+			keysInPool = c.engine.GetKeyPool().Count()
+		} else if len(c.cfg.APIKeys) > 0 {
+			keysInPool = len(c.cfg.APIKeys)
+		}
 		groqStatus := "No configurada (usando fallback si disponible)"
 		if c.cfg.GroqAPIKey != "" {
 			groqStatus = "CONFIGURADA (Groq Whisper activo)"
@@ -1017,28 +1219,35 @@ func (c *Client) handleConfigCommand(parts []string) string {
 		if len(c.cfg.MonitoredServices) > 0 {
 			svcs = strings.Join(c.cfg.MonitoredServices, ", ")
 		}
+		providerName := c.cfg.Provider
+		if providerName == "" {
+			providerName = "custom"
+		}
 
 		return fmt.Sprintf("*ESTADO DE CONFIGURACION DE FELIX*\n\n"+
 			"- *Owner / Admin JID:* `%s`\n"+
+			"- *Proveedor Activo:* `%s`\n"+
 			"- *API Base (Inferencia):* `%s`\n"+
-			"- *API Key:* `%s`\n"+
+			"- *API Key Primaria:* `%s`\n"+
+			"- *Claves en Pool (Rotacion):* %d\n"+
 			"- *Modelo LLM:* `%s`\n"+
 			"- *Groq Whisper:* %s\n"+
 			"- *Puerto Health / API:* `%s`\n"+
 			"- *Workspace:* `%s`\n"+
 			"- *Servicios Monitoreados:* %s\n\n"+
-			"*Comandos de configuracion:*\n"+
-			"- `/config apibase <url>`: Cambiar endpoint de inferencia.\n"+
-			"- `/config apikey <clave>`: Establecer API Key.\n"+
-			"- `/config model <modelo>`: Cambiar modelo de lenguaje.\n"+
-			"- `/config groq <clave>`: Configurar Whisper en Groq.\n"+
-			"- `/config service add|del <nombre>`: Gestionar servicios monitoreados.\n"+
-			"- `/config admin add <telefono>`: Agregar un administrador.\n"+
-			"- `/config voice [on|off]`: Modo respuestas de voz.",
-			owner, c.cfg.APIBase, keyStatus, c.cfg.Model, groqStatus, c.cfg.HealthPort, c.cfg.WorkspaceDir, svcs)
+			"*Comandos rapidos:*\n"+
+			"- `/menu`: Menu con presets rapidos (Gemini, OpenAI, Groq, Ollama).\n"+
+			"- `/config gemini <clave>`: Conectar Google Gemini.\n"+
+			"- `/config openai <clave>`: Conectar OpenAI.\n"+
+			"- `/config groq <clave>`: Conectar Groq.\n"+
+			"- `/config ollama`: Conectar Ollama Local.\n"+
+			"- `/config keys add <clave>`: Agregar clave al pool de rotacion.\n"+
+			"- `/config apibase <url>`: Cambiar endpoint personalizado.\n"+
+			"- `/config service add|del <nombre>`: Gestionar servicios monitoreados.",
+			owner, providerName, c.cfg.APIBase, keyStatus, keysInPool, c.cfg.Model, groqStatus, c.cfg.HealthPort, c.cfg.WorkspaceDir, svcs)
 	}
 
-	return "Subcomando de /config no reconocido. Ejecuta `/config status` para ver las opciones."
+	return "Subcomando de /config no reconocido. Ejecuta `/menu` o `/config status` para ver las opciones."
 }
 
 func getSystemStatus() string {

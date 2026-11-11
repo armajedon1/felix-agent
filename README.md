@@ -69,15 +69,31 @@ En la pantalla de la terminal aparecera el codigo QR:
 3. Escanee el codigo QR que aparece en la terminal.
 4. Una vez vinculado, la sesion queda guardada localmente en `data/whatsapp.db`.
 
-### 4. Configuracion desde WhatsApp
-Al enviar su primer mensaje a Felix en WhatsApp, el sistema lo registrara automaticamente como el **Administrador Principal**.
+### 4. Configuracion Instantanea desde WhatsApp
+Al escanear el codigo QR y enviar su primer mensaje ("hola" o cualquier texto), Felix detecta automaticamente al remitente y lo registra como el **Administrador Principal**.
 
-Configure sus credenciales de inferencia directamente desde el chat:
-```text
-/config apibase https://api.openai.com/v1
-/config apikey sk-su-clave-aqui
-/config model gpt-4o
-```
+De forma instantanea, Felix responde con el **Menu de Configuracion Rapida**:
+- **Opcion 1: Google Gemini (Recomendado):** `/config gemini <TU_API_KEY>`
+- **Opcion 2: OpenAI (GPT-4o):** `/config openai <TU_API_KEY>`
+- **Opcion 3: Groq Cloud (Ultra-rapido + Transcripcion Whisper):** `/config groq <TU_API_KEY>`
+- **Opcion 4: Ollama Local (Sin claves de API):** `/config ollama`
+- **Opcion 5: Antigravity Tools / Proxy Local:** `/config antigravity`
+- **Opcion 6: Multiples Claves con Rotacion 429:** `/config keys add <OTRA_API_KEY>`
+- **Opcion 7: Endpoint Personalizado:** `/config apibase <URL>` / `/config apikey <CLAVE>` / `/config model <MODELO>`
+
+Simplemente copie y pegue la linea correspondiente en WhatsApp para que Felix quede 100% activo y listo para razonar. Puede enviar `/menu` en cualquier momento para volver a ver estas opciones.
+
+---
+
+## Gateway de Inferencia Integrado y Rotacion de Claves
+
+Felix incluye una **puerta de enlace de inferencia integrada** (compatible con el estandar OpenAI) alojada en su servidor interno (puerto `8055` por defecto):
+- **Endpoints Expuestos:**
+  - `POST /v1/chat/completions`
+  - `GET /v1/models`
+- **Pool de Claves (KeyPool):** Soporte para multiples claves de API con rotacion atomica y balanceo.
+- **Auto-Recuperacion ante Limites de Cuota (HTTP 429):** Si un proveedor agota la cuota (Resource Exhausted / Rate Limit), el gateway rota inmediatamente a la siguiente clave disponible en el pool y reintenta la solicitud sin interrumpir al usuario.
+- **Compatibilidad con Clientes Externos:** Puede apuntar cualquier aplicacion externa (Claude Code, extensiones de VS Code, curl o agentes autonomos) a `http://127.0.0.1:8055/v1` para consumir la inferencia de Felix.
 
 O si utiliza proxies compatibles con OpenAI (como Antigravity Tools, Ollama o LocalAI):
 ```text

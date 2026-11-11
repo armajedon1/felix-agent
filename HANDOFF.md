@@ -12,10 +12,17 @@ El agente combina comunicacion nativa E2E mediante el protocolo WhatsMeow con un
 ### 2.1. Conectividad WhatsApp y Onboarding Instantaneo
 - **Libreria Central:** WhatsMeow (`go.mau.fi/whatsmeow`) sobre WebSockets y cifrado Signal Protocol.
 - **Renderizado de QR en Terminal:** Si el dispositivo no esta vinculado al arrancar, el cliente captura el canal QR y renderiza un codigo QR interactivo en formato ANSI half-block directamente en la terminal (`github.com/mdp/qrterminal/v3`).
-- **Autodeteccion de Administrador:** El primer usuario en escanear el codigo QR o comunicarse con Felix se registra automaticamente como Administrador Principal y `OwnerJID`.
-- **Menu Interactivo en WhatsApp:** Permite configurar endpoints de inferencia (`/config apibase <url>`), claves de API (`/config apikey <key>`), modelos (`/config model <name>`) y servicios monitoreados sin editar archivos manualmente.
+- **Autodeteccion de Administrador:** El primer usuario en comunicarse con Felix tras escanear el QR se registra automaticamente como Administrador Principal y `OwnerJID`.
+- **Menu Interactivo en WhatsApp:** Despacha de inmediato el menu de bienvenida con presets listos para copiar y pegar (`/config gemini <key>`, `/config openai <key>`, `/config groq <key>`, `/config ollama`, `/config antigravity`).
+- **Menu y Subcomandos:** `/menu` accesible en cualquier momento y comandos `/config` para endpoints personalizados y pool de claves.
 
-### 2.2. Motor Agentico (ReAct Loop)
+### 2.2. Gateway de Inferencia Integrado y Rotacion de Claves
+- **Implementacion:** `internal/inference/gateway.go` y `internal/inference/provider.go`
+- **Servidor Proxy OpenAI-Compatible:** Expone `/v1/chat/completions` y `/v1/models` en el puerto HTTP interno (`8055`).
+- **Pool de Claves (KeyPool):** Gestion concurrente de claves con rotacion automatica inmediata ante codigos HTTP 429 (Rate Limit o cuota agotada).
+- **Presets de Fabrica:** Gemini (`gemini-2.5-flash`), OpenAI (`gpt-4o`), Groq (`llama-3.3-70b-versatile` + Whisper), Ollama (`llama3`), Antigravity Tools (`http://127.0.0.1:8045/v1`).
+
+### 2.3. Motor Agentico (ReAct Loop)
 - **Implementacion:** `internal/agent/engine.go`
 - **Capacidades:**
   - Invocacion concurrente de herramientas mediante `sync.WaitGroup` cuando el modelo emite multiples tool calls simultaneas.
@@ -58,7 +65,8 @@ El agente combina comunicacion nativa E2E mediante el protocolo WhatsMeow con un
 | :--- | :--- |
 | `/help` | Muestra la guia completa de comandos directos. |
 | `/status` | Diagnostico completo en tiempo real de hardware, red y servicios. |
-| `/config` | Menu interactivo de configuracion del sistema y de inferencia de IA. |
+| `/menu` | Menu interactivo de bienvenida y presets de configuracion de inferencia. |
+| `/config` | Configuracion detallada de credenciales, pool de claves y servicios. |
 | `/services` | Estado detallado de los servicios monitoreados (PM2, Docker, Systemd). |
 | `/sub <id>` | Lectura de reportes tecnicos generados por subagentes autonomos. |
 | `/backup` | Ejecuta un respaldo atomico inmediato de todas las bases SQLite (`VACUUM INTO`). |
