@@ -17,6 +17,7 @@ import (
 	"felix-go/internal/channel"
 	tgChan "felix-go/internal/channel/telegram"
 	waChan "felix-go/internal/channel/whatsapp"
+	"felix-go/internal/checkpoint"
 	"felix-go/internal/config"
 	"felix-go/internal/digest"
 	"felix-go/internal/fastpath"
@@ -149,6 +150,13 @@ func main() {
 	}
 
 	// 2. Inicializar Catalogo de Herramientas (Tool Registry)
+	ckptStore, err := checkpoint.NewSQLiteStore(filepath.Join(cfg.DataDir, "checkpoints.db"))
+	if err != nil {
+		log.Printf("[warn] no se pudo inicializar checkpoint store: %v", err)
+	} else {
+		defer ckptStore.Close()
+	}
+
 	skillsDir := cfg.SkillsDir
 	reg := tools.NewRegistry()
 	reg.Register(&tools.ExecTool{DefaultWorkDir: cfg.WorkspaceDir})
@@ -159,6 +167,10 @@ func main() {
 	reg.Register(&tools.ApplyPatchTool{DefaultWorkDir: cfg.WorkspaceDir})
 	reg.Register(&tools.ProcessTool{})
 	reg.Register(&tools.AntigravityTool{})
+	reg.Register(&tools.HarnessDevelopTool{
+		DefaultRepoDir:  cfg.WorkspaceDir,
+		CheckpointStore: ckptStore,
+	})
 	reg.Register(&tools.PcTaskTool{})
 	reg.Register(&tools.GcliTool{})
 	reg.Register(&tools.HomelabTool{})

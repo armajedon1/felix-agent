@@ -806,7 +806,7 @@ func (d *chatDebouncer) processQueue() {
 		}
 	}()
 
-	runCtx, runCancel := context.WithTimeout(context.Background(), 180*time.Second)
+	runCtx, runCancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer runCancel()
 
 	contextMem := ""

@@ -52,7 +52,22 @@ El agente combina comunicacion nativa E2E mediante el protocolo WhatsMeow con un
 - **Implementacion:** `internal/fastpath/fastpath.go`
 - **Ruta Rapida:** Intercepta consultas deterministicas cotidianas (hora, fecha, uptime, interfaces de red, estado de memoria y disco) y responde en < 5ms sin consumir tokens ni realizar llamadas al LLM.
 
-### 2.6. Persistencia y Almacenamiento SQLite
+### 2.6. Motor de Grafos de Estado y Persistencia Transaccional
+- **Implementacion:** `internal/graph/` y `internal/checkpoint/`
+- **StateGraph:** Maquina de estados determinista inspirada en LangGraph, con soporte para nodos (`NodeFunc`), aristas directas y aristas condicionales (`EdgeRouter`), suspension de ejecucion (`ErrSuspend`) y control estricto de pasos maximos.
+- **Persistencia en SQLite WAL (`internal/checkpoint/sqlite_store.go`):** Cada transicion de nodo genera un snapshot inmutable en `graph_checkpoints`.
+- **Time-Travel y Rollback:** Permite pausar corridas, reanudarlas tras caidas del proceso (`Resume`) o retroceder el estado a cualquier paso anterior (`Rollback`).
+- **Human-in-the-Loop (HITL):** Capacidad para suspender tareas ante operaciones criticas (ej. migraciones de base de datos) esperando aprobacion explicita del usuario sin mantener goroutines vivas.
+
+### 2.7. Arnes de Desarrollo Nativo en Go
+- **Implementacion:** `internal/harness/` y `internal/tools/harness_tool.go`
+- **Mapeador Sintactico AST (`internal/harness/repomap`):** Analisis del arbol de tipos y funciones exportadas del repositorio mediante `go/parser` de la biblioteca estandar de Go (con soporte adicional para Python y TypeScript/JavaScript) para proveer contexto en menos de 1.500 tokens.
+- **Motor de Diff y Fuzzy Matching (`internal/harness/patcher`):** Sustitucion basada en bloques `SEARCH/REPLACE` con algoritmo de distancia de Levenshtein para tolerancia a sangrias y espaciado (umbral > 90%) y escrituras atomicas en disco.
+- **Sandbox Git Aislado (`internal/harness/sandbox`):** Creacion y aislamiento en ramas efimeras `felix-sandbox/task-<id>`, commits atomicos por paso y fusion controlada (`MergeToMain`) o descarte total (`Discard`) en caso de error.
+- **Bucle REPL de Compilacion y Linter (`internal/harness/runner`):** Deteccion automatica de proyectos (Go, Rust, Node, Python), ejecucion de pruebas y sanitizacion de `stderr` para aislar causas raiz sin desbordar el contexto del modelo.
+- **Plantillas Maestras Embebidas (`internal/harness/prompts`):** Prompts de ingenieria, reglas de diff y plantillas de correccion embebidas en el binario estatico mediante `//go:embed`.
+
+### 2.8. Persistencia y Almacenamiento SQLite
 - **Directorio de Datos:** `data/`
   - `whatsapp.db`: Sesion y claves criptograficas de WhatsMeow.
   - `sessions.db`: Historial persistente de conversaciones, scratchpads y subagentes.

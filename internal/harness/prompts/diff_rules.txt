@@ -1,0 +1,16 @@
+Especificacion formal de bloques SEARCH/REPLACE:
+
+Cada edicion debe estar precedida por la ruta relativa del archivo y delimitada por marcadores exactos:
+
+### ruta/del/archivo.ext
+<<<<<<< SEARCH
+[Fragmento de codigo exacto a reemplazar existente en el archivo]
+=======
+[Nuevo fragmento de codigo de reemplazo]
+>>>>>>> REPLACE
+
+Reglas de aplicacion:
+1. El bloque SEARCH debe ser una subcadena exacta y representativa del archivo objetivo, con contexto suficiente (lineas circundantes) para evitar ambiguedades.
+2. Cada archivo modificado debe llevar su propio encabezado ### ruta/al/archivo.ext antes de su bloque.
+3. Puedes emitir multiples bloques para diferentes archivos o diferentes regiones del mismo archivo.
+4. No envies explicaciones ni texto conversacional redundante alrededor de los bloques.

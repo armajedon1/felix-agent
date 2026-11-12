@@ -1,0 +1,15 @@
+El ciclo de verificacion en el sandbox fallo con el siguiente error:
+
+Comando ejecutado:
+{{COMMAND}}
+
+Salida del compilador / suite de pruebas:
+{{ERROR}}
+
+Contexto relevante:
+{{CONTEXT}}
+
+Instrucciones de correccion:
+1. Analiza el archivo y linea donde se origina el fallo.
+2. Identifica la causa raiz (simbolo no definido, discordancia de tipos, panic o asercion fallida).
+3. Emite los bloques SEARCH/REPLACE necesarios para subsanar el error sin alterar la funcionalidad esperada.

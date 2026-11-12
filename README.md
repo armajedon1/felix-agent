@@ -8,6 +8,8 @@ Diseñado para operar de forma continua, silenciosa y con consumo minimo de recu
 
 ## Caracteristicas Principales
 
+- **Motor de Grafos de Estado y Persistencia Transaccional:** Motor de maquinas de estado deterministas (`internal/graph`) con checkpoints atomicos en SQLite WAL (`internal/checkpoint`), soporte para pausas asincronas Human-in-the-Loop (`ErrSuspend`), reanudacion tras caidas y Time-Travel (rollback a pasos previos).
+- **Arnes de Desarrollo Nativo en Go:** Subgrafo de ingenieria de software (`internal/harness`) con mapeo sintactico AST de repositorios, motor de parches Search/Replace difusos (fuzzy matching tolerante a sangria), aislamiento en ramas efimeras de Git (`felix-sandbox/task-<id>`), bucle REPL de verificacion de pruebas y plantillas embebidas con `//go:embed`.
 - **Arquitectura Omnicanal y Modular:** Soporte simultaneo o independiente para WhatsApp y Telegram. Si se prefiere operar exclusivamente por Telegram, el agente inicia sin solicitar codigo QR ni crear bases de datos de WhatsApp.
 - **Pipeline Multimodal Estandarizado:** Procesamiento agnostico al canal para notas de voz y audio PTT (transcripcion Whisper automatica), imagenes (analisis visual) y documentos adjuntos.
 - **Instalacion con Un Solo Comando:** Script automatizado (`./install.sh` o `make run`) que verifica dependencias, crea la estructura de directorios, compila el binario y lanza el servicio.
