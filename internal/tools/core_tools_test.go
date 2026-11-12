@@ -42,3 +42,75 @@ func TestExecTool_Truncation(t *testing.T) {
 		t.Errorf("se esperaba etiqueta de truncamiento")
 	}
 }
+
+type panickyTool struct{}
+
+func (p *panickyTool) Name() string                { return "panicky" }
+func (p *panickyTool) Description() string         { return "herramienta que genera panic" }
+func (p *panickyTool) Parameters() map[string]any { return map[string]any{} }
+func (p *panickyTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	panic("fallo critico simulado")
+}
+
+func TestRegistry_PanicRecovery(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&panickyTool{})
+
+	res, err := reg.Execute(context.Background(), "panicky", json.RawMessage("{}"))
+	if err == nil {
+		t.Fatalf("se esperaba error tras panic, obtenido nil")
+	}
+	if res != "" {
+		t.Errorf("se esperaba resultado vacio, obtenido: %s", res)
+	}
+	if !strings.Contains(err.Error(), "error interno en herramienta panicky: fallo critico simulado") {
+		t.Errorf("mensaje de error inesperado: %v", err)
+	}
+}
+
+func TestCleanHTML(t *testing.T) {
+	htmlInput := `
+		<!DOCTYPE html>
+		<html>
+		<head><style>body { color: red; }</style></head>
+		<body>
+			<header><p>Cabecera a descartar</p></header>
+			<nav><a href="/home">Inicio</a></nav>
+			<aside><p>Barra lateral</p></aside>
+			<main>
+				<h1>Titulo Principal</h1>
+				<p>Contenido del articulo con &amp; y &lt;etiquetas&gt;.</p>
+				<ul>
+					<li>Item 1</li>
+					<li>Item 2</li>
+				</ul>
+			</main>
+			<footer><p>Pie de pagina</p></footer>
+			<script>console.log("drop me");</script>
+		</body>
+		</html>
+	`
+	cleaned := cleanHTML(htmlInput)
+
+	if strings.Contains(cleaned, "Cabecera a descartar") {
+		t.Errorf("cleanHTML debio descartar contenido dentro de <header>")
+	}
+	if strings.Contains(cleaned, "Barra lateral") {
+		t.Errorf("cleanHTML debio descartar contenido dentro de <aside>")
+	}
+	if strings.Contains(cleaned, "Pie de pagina") {
+		t.Errorf("cleanHTML debio descartar contenido dentro de <footer>")
+	}
+	if strings.Contains(cleaned, "Inicio") {
+		t.Errorf("cleanHTML debio descartar contenido dentro de <nav>")
+	}
+	if strings.Contains(cleaned, "drop me") {
+		t.Errorf("cleanHTML debio descartar contenido de <script>")
+	}
+	if !strings.Contains(cleaned, "# Titulo Principal") {
+		t.Errorf("se esperaba encabezado convertido a markdown: %s", cleaned)
+	}
+	if !strings.Contains(cleaned, "Contenido del articulo con & y <etiquetas>.") {
+		t.Errorf("se esperaban entidades HTML decodificadas: %s", cleaned)
+	}
+}

@@ -652,8 +652,17 @@ func cleanHTML(raw string) string {
 	reStyle := regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
 	raw = reStyle.ReplaceAllString(raw, "")
 
-	reNav := regexp.MustCompile(`(?is)<(nav|header|footer|aside)[^>]*>.*?</\1>`)
+	reNav := regexp.MustCompile(`(?is)<nav[^>]*>.*?</nav>`)
 	raw = reNav.ReplaceAllString(raw, "")
+
+	reHeader := regexp.MustCompile(`(?is)<header[^>]*>.*?</header>`)
+	raw = reHeader.ReplaceAllString(raw, "")
+
+	reFooter := regexp.MustCompile(`(?is)<footer[^>]*>.*?</footer>`)
+	raw = reFooter.ReplaceAllString(raw, "")
+
+	reAside := regexp.MustCompile(`(?is)<aside[^>]*>.*?</aside>`)
+	raw = reAside.ReplaceAllString(raw, "")
 
 	// Encabezados
 	reH := regexp.MustCompile(`(?is)<h([1-6])[^>]*>(.*?)</h[1-6]>`)

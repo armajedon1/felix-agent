@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"sync"
 )
 
@@ -123,9 +125,27 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 		}
 	}
 
-	res, err := t.Execute(ctx, args)
-	if err == nil && r.cache != nil {
+	var (
+		res string
+		err error
+	)
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("[tools] panic recuperado en herramienta %s: %v\nstack:\n%s", name, rec, debug.Stack())
+				err = fmt.Errorf("error interno en herramienta %s: %v", name, rec)
+			}
+		}()
+		res, err = t.Execute(ctx, args)
+	}()
+
+	if err != nil {
+		return "", err
+	}
+
+	if r.cache != nil {
 		r.cache.Set(name, args, res)
 	}
-	return res, err
+	return res, nil
 }
