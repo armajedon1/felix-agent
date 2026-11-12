@@ -36,6 +36,15 @@ func NewWhisperClient(groqKey, openAIKey string) *WhisperClient {
 	}
 }
 
+// TranscribeAudio implementa channel.Transcriber leyendo el archivo desde disco.
+func (w *WhisperClient) TranscribeAudio(ctx context.Context, audioPath string) (string, error) {
+	data, err := os.ReadFile(audioPath)
+	if err != nil {
+		return "", fmt.Errorf("error leyendo archivo de audio para transcribir: %w", err)
+	}
+	return w.Transcribe(ctx, data)
+}
+
 // Transcribe envia audio .ogg al proveedor primario (Groq) con failover automatico a OpenAI.
 func (w *WhisperClient) Transcribe(ctx context.Context, audioData []byte) (string, error) {
 	if len(audioData) == 0 {

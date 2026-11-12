@@ -1,16 +1,18 @@
-# Felix - Asistente y Agente Autonomo de Ingenieria y DevOps en WhatsApp
+# Felix - Asistente y Agente Autonomo de Ingenieria y DevOps en WhatsApp y Telegram
 
-Felix es un agente autonomo de alta eficiencia desarrollado en **Go** para la administracion, monitoreo y desarrollo en servidores **Linux** a traves de **WhatsApp**.
+Felix es un agente autonomo de alta eficiencia desarrollado en **Go** para la administracion, monitoreo y desarrollo en servidores **Linux** a traves de **WhatsApp** y **Telegram**.
 
-Diseñado para operar de forma continua, silenciosa y con consumo minimo de recursos (~30 MB de memoria RAM), Felix combina comunicacion nativa punto a punto (WebSockets E2E con WhatsMeow) con un motor de razonamiento ReAct, ejecucion concurrente de herramientas, enrutamiento deterministico de latencia cero, orquestacion de subagentes especializados y compatibilidad con el estandar **Model Context Protocol (MCP)**.
+Diseñado para operar de forma continua, silenciosa y con consumo minimo de recursos (~30 MB de memoria RAM), Felix cuenta con una arquitectura omnicanal y completamente multimodal: combina transporte nativo punto a punto (WebSockets E2E con WhatsMeow y Telegram Bot API sin dependencias pesadas) con un motor de razonamiento ReAct, ejecucion concurrente de herramientas, enrutamiento deterministico de latencia cero, orquestacion de subagentes especializados y compatibilidad con el estandar **Model Context Protocol (MCP)**.
 
 ---
 
 ## Caracteristicas Principales
 
+- **Arquitectura Omnicanal y Modular:** Soporte simultaneo o independiente para WhatsApp y Telegram. Si se prefiere operar exclusivamente por Telegram, el agente inicia sin solicitar codigo QR ni crear bases de datos de WhatsApp.
+- **Pipeline Multimodal Estandarizado:** Procesamiento agnostico al canal para notas de voz y audio PTT (transcripcion Whisper automatica), imagenes (analisis visual) y documentos adjuntos.
 - **Instalacion con Un Solo Comando:** Script automatizado (`./install.sh` o `make run`) que verifica dependencias, crea la estructura de directorios, compila el binario y lanza el servicio.
-- **Vinculacion Instantanea por Codigo QR en Terminal:** Al arrancar por primera vez, dibuja un codigo QR nativo en bloques ANSI dentro de la consola para vincular cualquier cuenta de WhatsApp en segundos sin interfaz grafica.
-- **Configuracion Interactiva desde WhatsApp:** Menu interactivo con comandos `/config` para configurar o cambiar endpoints de inferencia (`api_base`), claves de API (`api_key`), modelos de lenguaje (`model`), servicios monitoreados y credenciales de Whisper directamente por chat.
+- **Vinculacion Instantanea por Codigo QR en Terminal:** Al activar WhatsApp por primera vez, dibuja un codigo QR nativo en bloques ANSI dentro de la consola para vincular cualquier cuenta en segundos sin interfaz grafica.
+- **Configuracion Interactiva desde el Chat:** Menu interactivo con comandos `/config` y `/menu` para configurar o cambiar endpoints de inferencia (`api_base`), claves de API (`api_key`), modelos de lenguaje (`model`), servicios monitoreados y credenciales de Whisper directamente por chat (WhatsApp o Telegram).
 - **Asistente de Terminal Integrado:** Subcomando `./bin/felix setup` para quienes prefieran configurar variables de entorno y claves antes de arrancar.
 - **Ruta Rapida (Fast-Path < 5ms):** Diagnosticos del sistema (uptime, memoria RAM, espacio en disco, direcciones IP, servicios) respondidos inmediatamente sin consumir tokens ni invocar al LLM.
 - **Catalogo de 38 Herramientas Nativas:**

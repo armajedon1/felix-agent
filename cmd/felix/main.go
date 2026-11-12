@@ -14,8 +14,12 @@ import (
 	"time"
 
 	"felix-go/internal/agent"
+	"felix-go/internal/channel"
+	tgChan "felix-go/internal/channel/telegram"
+	waChan "felix-go/internal/channel/whatsapp"
 	"felix-go/internal/config"
 	"felix-go/internal/digest"
+	"felix-go/internal/fastpath"
 	"felix-go/internal/health"
 	"felix-go/internal/inference"
 	"felix-go/internal/mcp"
@@ -231,6 +235,7 @@ func main() {
 	digestCtx, digestCancel := context.WithCancel(context.Background())
 	defer digestCancel()
 	digestWatcher.StartRunner(digestCtx)
+	fastRouter := fastpath.NewRouter(digestWatcher)
 
 	// 6. Inicializar Planificador de Recordatorios y Tareas
 	schedDBPath := filepath.Join(cfg.DataDir, "reminders.db")
@@ -299,67 +304,120 @@ func main() {
 		return
 	}
 
-	// MODO DEMONIO: Inicializar cliente WhatsMeow y canal de WhatsApp
-	log.Println("Iniciando canal de comunicacion WhatsApp...")
-	waDBPath := filepath.Join(cfg.DataDir, "whatsapp.db")
-	waClient, err := whatsapp.NewClient(cfg, engine, sched, memStore, userMgr, digestWatcher, scratchpadMgr, waDBPath)
-	if err != nil {
-		log.Fatalf("Error inicializando cliente WhatsApp: %v", err)
+	// Inicializar Pipeline Multimodal compartido (Whisper STT, vision, documentos)
+	multimodalPipe := channel.NewMultimodalPipeline(nil)
+
+	// Inicializar Gestor Omnicanal
+	chanManager := channel.NewManager(cfg, engine, sched, userMgr, fastRouter, memStore, multimodalPipe)
+
+	var waClient *whatsapp.Client
+	var cmdClient *whatsapp.Client
+
+	// 1. Canal WhatsApp (Condicional: si esta habilitado en configuracion)
+	if cfg.WhatsAppEnabled {
+		log.Println("Inicializando canal de comunicacion WhatsApp...")
+		waDBPath := filepath.Join(cfg.DataDir, "whatsapp.db")
+		var err error
+		waClient, err = whatsapp.NewClient(cfg, engine, sched, memStore, userMgr, digestWatcher, scratchpadMgr, waDBPath)
+		if err != nil {
+			log.Fatalf("Error inicializando cliente WhatsApp: %v", err)
+		}
+		cmdClient = waClient
+
+		if waClient.GetWhisperClient() != nil {
+			multimodalPipe.SetTranscriber(waClient.GetWhisperClient())
+		}
+
+		chanManager.SetSlashHandler(waClient.HandleSlashCommand)
+		chanManager.SetMenuHandler(waClient.GetOnboardingMenu)
+
+		waChannel := waChan.NewWhatsAppChannel(waClient)
+		chanManager.RegisterChannel(waChannel)
 	}
 
+	// 2. Canal Telegram (Condicional: si esta habilitado o token configurado)
+	if cfg.TelegramEnabled || cfg.TelegramBotToken != "" {
+		log.Println("Inicializando canal de comunicacion Telegram...")
+		downloadsDir := filepath.Join(cfg.DataDir, "downloads")
+		tgChannel := tgChan.NewTelegramChannel(cfg.TelegramBotToken, downloadsDir, cfg.TelegramAllowed)
+		chanManager.RegisterChannel(tgChannel)
+
+		if cmdClient == nil {
+			cmdClient = whatsapp.NewStandaloneCommandHandler(cfg, engine, sched, userMgr, digestWatcher, scratchpadMgr)
+			chanManager.SetSlashHandler(cmdClient.HandleSlashCommand)
+			chanManager.SetMenuHandler(cmdClient.GetOnboardingMenu)
+		}
+
+		if (cfg.GroqAPIKey != "" || cfg.OpenAIAPIKey != "") && (waClient == nil || waClient.GetWhisperClient() == nil) {
+			wClient := whatsapp.NewWhisperClient(cfg.GroqAPIKey, cfg.OpenAIAPIKey)
+			multimodalPipe.SetTranscriber(wClient)
+		}
+	}
+
+	// Feedback de progreso hacia el canal correspondiente
 	engine.SetProgressFunc(func(sessionID, statusText string) {
-		_ = waClient.SendMessage(context.Background(), sessionID, statusText)
+		_ = chanManager.SendMessage(context.Background(), sessionID, statusText)
 	})
 
-	// Registrar herramientas nativas para enviar mensajes, archivos y notas de voz hacia WhatsApp
+	// Registrar herramientas nativas omnicanal (despachan a WhatsApp o Telegram segun el destinatario)
 	reg.Register(&tools.SendMessageTool{
-		SendFunc:   waClient.SendMessage,
+		SendFunc:   chanManager.SendMessage,
 		DefaultJID: defaultJID,
 	})
 	reg.Register(&tools.SendFileTool{
-		SendFunc:   waClient.SendFile,
+		SendFunc:   chanManager.SendFile,
 		DefaultJID: defaultJID,
 	})
 	reg.Register(&tools.SendVoiceTool{
-		SendVoiceFunc: waClient.SendVoice,
-		DefaultJID:    defaultJID,
+		SendVoiceFunc: func(ctx context.Context, targetJID, textOrAudioPath string, isText bool) error {
+			if isText {
+				return chanManager.SendMessage(ctx, targetJID, textOrAudioPath)
+			}
+			return chanManager.SendUniversal(ctx, targetJID, channel.OutgoingMessage{
+				VoicePath: textOrAudioPath,
+			})
+		},
+		DefaultJID: defaultJID,
 	})
 	reg.Register(&tools.ImageGenerateTool{
 		OpenAIKey:    cfg.OpenAIAPIKey,
 		DataDir:      cfg.DataDir,
-		SendFileFunc: waClient.SendFile,
+		SendFileFunc: chanManager.SendFile,
 		DefaultJID:   defaultJID,
 	})
 	reg.Register(&tools.BackgroundWorkerTool{
 		SendFunc: func(chatJID, message string) error {
-			return waClient.SendMessage(context.Background(), chatJID, message)
+			return chanManager.SendMessage(context.Background(), chatJID, message)
 		},
 		DefaultJID: defaultJID,
 	})
 
-	// Inicializar Administrador de Subagentes Concurrentes en Go y SQLite
+	// Inicializar Administrador de Subagentes Concurrentes
 	subagentMgr, err := agent.NewSubagentManager(histMgr.DB(), engine, func(chatJID, message string) error {
-		return waClient.SendMessage(context.Background(), chatJID, message)
+		return chanManager.SendMessage(context.Background(), chatJID, message)
 	}, defaultJID)
 	if err != nil {
 		log.Fatalf("Error inicializando SubagentManager: %v", err)
 	}
-	waClient.SetSubagentManager(subagentMgr)
+	if waClient != nil {
+		waClient.SetSubagentManager(subagentMgr)
+	}
 	reg.Register(&tools.SubagentSpawnTool{
 		Runner: subagentMgr,
 	})
 
-	// Iniciar despacho autonomo de recordatorios conectados al envio de WhatsApp
+	// Despacho autonomo de recordatorios
 	if sched != nil {
 		schedCtx, schedCancel := context.WithCancel(context.Background())
 		defer schedCancel()
 		sched.StartRunner(schedCtx, func(chatJID, message string) error {
-			return waClient.SendMessage(context.Background(), chatJID, message)
+			return chanManager.SendMessage(context.Background(), chatJID, message)
 		}, defaultJID)
 	}
 
-	// Iniciar servidor HTTP interno de salud, metricas, gateway de inferencia y webhooks
+	// Servidor HTTP interno de salud, metricas, gateway de inferencia y webhooks
 	healthServer := health.NewServer("0.0.0.0:"+cfg.HealthPort, engine, waClient, memStore, subagentMgr)
+	healthServer.SetChannelManager(chanManager)
 	gw := inference.NewGateway(cfg.APIBase, cfg.Model, engine.GetKeyPool())
 	healthServer.SetGateway(gw)
 	healthServer.Start()
@@ -369,11 +427,12 @@ func main() {
 		_ = healthServer.Stop(stopCtx)
 	}()
 
-	// Iniciar conexion a WhatsApp
-	connCtx, connCancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer connCancel()
-	if err := waClient.Start(connCtx); err != nil {
-		log.Fatalf("Error conectando a WhatsApp: %v", err)
+	// Iniciar todos los canales activos
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
+	if err := chanManager.StartAll(appCtx); err != nil {
+		log.Fatalf("Error iniciando canales: %v", err)
 	}
 
 	// Manejo de senales para apagado ordenado
@@ -384,6 +443,6 @@ func main() {
 	sig := <-sigChan
 	log.Printf("Senal recibida (%v). Finalizando limpiamente...", sig)
 
-	waClient.Disconnect()
+	chanManager.StopAll()
 	log.Println("Felix detenido ordenadamente.")
 }

@@ -9,12 +9,14 @@ El agente combina comunicacion nativa E2E mediante el protocolo WhatsMeow con un
 
 ## 2. Componentes Arquitectonicos
 
-### 2.1. Conectividad WhatsApp y Onboarding Instantaneo
-- **Libreria Central:** WhatsMeow (`go.mau.fi/whatsmeow`) sobre WebSockets y cifrado Signal Protocol.
-- **Renderizado de QR en Terminal:** Si el dispositivo no esta vinculado al arrancar, el cliente captura el canal QR y renderiza un codigo QR interactivo en formato ANSI half-block directamente en la terminal (`github.com/mdp/qrterminal/v3`).
-- **Autodeteccion de Administrador:** El primer usuario en comunicarse con Felix tras escanear el QR se registra automaticamente como Administrador Principal y `OwnerJID`.
-- **Menu Interactivo en WhatsApp:** Despacha de inmediato el menu de bienvenida con presets listos para copiar y pegar (`/config gemini <key>`, `/config openai <key>`, `/config groq <key>`, `/config ollama`, `/config antigravity`).
-- **Menu y Subcomandos:** `/menu` accesible en cualquier momento y comandos `/config` para endpoints personalizados y pool de claves.
+### 2.1. Arquitectura Omnicanal (WhatsApp y Telegram)
+- **Implementacion:** `internal/channel/`
+- **Interfaz Channel:** Define un contrato agnostico (`Name`, `Type`, `Start`, `Stop`, `Send`, `IsConnected`) para cualquier transporte de mensajeria.
+- **Canal WhatsApp (`internal/channel/whatsapp`):** WhatsMeow (`go.mau.fi/whatsmeow`) sobre WebSockets y Signal Protocol con renderizado QR interactivo en terminal (`github.com/mdp/qrterminal/v3`).
+- **Canal Telegram (`internal/channel/telegram`):** Conector ultraligero implementado directamente sobre la Telegram Bot API oficial con long-polling HTTP, soporte de mensajes Markdown, notas de voz (Opus), fotos y documentos adjuntos sin librerias externas pesadas.
+- **Activacion Condicional:** Cada canal se habilita o deshabilita mediante booleanos (`whatsapp_enabled`, `telegram_enabled`) en `config.json`. Si un usuario prefiere unicamente Telegram, el agente inicia limpiamente sin solicitar codigo QR de WhatsApp.
+- **Pipeline Multimodal Estandarizado (`internal/channel/multimodal.go`):** Procesa de forma comun audios (STT Whisper Groq/OpenAI), imagenes y documentos adjuntos de cualquier canal antes de enviarlos al razonamiento agentico.
+- **Autodeteccion de Administrador:** El primer usuario en comunicarse con Felix desde cualquiera de los canales habilitados se registra como Administrador Principal.
 
 ### 2.2. Gateway de Inferencia Integrado y Rotacion de Claves
 - **Implementacion:** `internal/inference/gateway.go` y `internal/inference/provider.go`

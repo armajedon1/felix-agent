@@ -19,6 +19,10 @@ type Config struct {
 	PhoneNumber       string            `json:"phone_number,omitempty"`
 	AllowedUsers      []string          `json:"allowed_users"`
 	AllowedGroups     []string          `json:"allowed_groups"`
+	WhatsAppEnabled   bool              `json:"whatsapp_enabled"`
+	TelegramEnabled   bool              `json:"telegram_enabled"`
+	TelegramBotToken  string            `json:"telegram_bot_token,omitempty"`
+	TelegramAllowed   []string          `json:"telegram_allowed,omitempty"`
 	Provider          string            `json:"provider,omitempty"`
 	APIBase           string            `json:"api_base"`
 	APIKey            string            `json:"api_key"`
@@ -51,6 +55,10 @@ func DefaultConfig() *Config {
 		PhoneNumber:       "",
 		AllowedUsers:      []string{},
 		AllowedGroups:     []string{},
+		WhatsAppEnabled:   true,
+		TelegramEnabled:   false,
+		TelegramBotToken:  "",
+		TelegramAllowed:   []string{},
 		Provider:          "antigravity",
 		APIBase:           "http://127.0.0.1:8045/v1",
 		APIKey:            "",
@@ -122,6 +130,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.SystemPrompt == "" {
 		cfg.SystemPrompt = DefaultConfig().SystemPrompt
+	}
+	if !cfg.WhatsAppEnabled && !cfg.TelegramEnabled && cfg.TelegramBotToken == "" {
+		cfg.WhatsAppEnabled = true
 	}
 
 	return &cfg, nil

@@ -145,6 +145,20 @@ func NewClient(cfg *config.Config, eng *agent.Engine, sched *scheduler.Scheduler
 	return c, nil
 }
 
+// NewStandaloneCommandHandler crea una instancia ligera de Client sin whatsmeow para atender comandos directos (util cuando WhatsApp esta deshabilitado y solo opera Telegram).
+func NewStandaloneCommandHandler(cfg *config.Config, eng *agent.Engine, sched *scheduler.Scheduler, userMgr *users.Manager, dw *digest.Watcher, sm *tools.ScratchpadManager) *Client {
+	return &Client{
+		cfg:           cfg,
+		engine:        eng,
+		scheduler:     sched,
+		userMgr:       userMgr,
+		whisper:       NewWhisperClient(cfg.GroqAPIKey, cfg.OpenAIAPIKey),
+		digestWatcher: dw,
+		fastRouter:    fastpath.NewRouter(dw),
+		scratchpad:    sm,
+	}
+}
+
 // Start conecta el cliente a WhatsApp o genera el codigo QR en terminal si es una sesion nueva.
 func (c *Client) Start(ctx context.Context) error {
 	if c.client.Store.ID == nil {
@@ -210,6 +224,11 @@ func (c *Client) GetOwnerJID() string {
 		}
 	}
 	return ""
+}
+
+// GetWhisperClient expone el cliente de transcripcion Whisper para el pipeline multimodal.
+func (c *Client) GetWhisperClient() *WhisperClient {
+	return c.whisper
 }
 
 // splitTextForWhatsApp divide textos extensos respetando saltos de linea o palabras para evitar cortes abruptos.

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"felix-go/internal/agent"
+	"felix-go/internal/channel"
 	"felix-go/internal/inference"
 	"felix-go/internal/memory"
 	"felix-go/internal/whatsapp"
@@ -22,6 +23,7 @@ type Server struct {
 	server      *http.Server
 	engine      *agent.Engine
 	waClient    *whatsapp.Client
+	chanMgr     *channel.Manager
 	memStore    *memory.Store
 	subagentMgr *agent.SubagentManager
 	gateway     *inference.Gateway
@@ -34,6 +36,7 @@ type StatusResponse struct {
 	UptimeSeconds         int64     `json:"uptime_seconds"`
 	UptimeHuman           string    `json:"uptime_human"`
 	WhatsAppConnected     bool      `json:"whatsapp_connected"`
+	TelegramConnected     bool      `json:"telegram_connected"`
 	LLMPrimaryHealthy     bool      `json:"llm_primary_healthy"`
 	LLMFallbackActive     bool      `json:"llm_fallback_active"`
 	TotalPrimaryCalls     int64     `json:"total_primary_calls"`
@@ -93,6 +96,11 @@ func (s *Server) SetGateway(gw *inference.Gateway) {
 	s.gateway = gw
 }
 
+// SetChannelManager enlaza el administrador omnicanal.
+func (s *Server) SetChannelManager(cm *channel.Manager) {
+	s.chanMgr = cm
+}
+
 // Start inicia el servidor en segundo plano e inicia el latido push opcional si esta configurado.
 func (s *Server) Start() {
 	go func() {
@@ -136,7 +144,16 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(s.startTime)
 	llmStatus := s.engine.GetLLMStatus()
 	waConn := false
-	if s.waClient != nil {
+	tgConn := false
+
+	if s.chanMgr != nil {
+		if wa, ok := s.chanMgr.GetChannel(channel.ChannelWhatsApp); ok {
+			waConn = wa.IsConnected()
+		}
+		if tg, ok := s.chanMgr.GetChannel(channel.ChannelTelegram); ok {
+			tgConn = tg.IsConnected()
+		}
+	} else if s.waClient != nil {
 		waConn = s.waClient.IsConnected()
 	}
 
@@ -155,6 +172,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		UptimeSeconds:         int64(uptime.Seconds()),
 		UptimeHuman:           uptime.Round(time.Second).String(),
 		WhatsAppConnected:     waConn,
+		TelegramConnected:     tgConn,
 		LLMPrimaryHealthy:     llmStatus.PrimaryHealthy,
 		LLMFallbackActive:     llmStatus.FallbackActive,
 		TotalPrimaryCalls:     llmStatus.TotalPrimaryCalls,
@@ -267,14 +285,16 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.waClient == nil {
-		http.Error(w, "Cliente WhatsApp no disponible", http.StatusServiceUnavailable)
+	if s.chanMgr == nil && s.waClient == nil {
+		http.Error(w, "Canal de notificaciones no disponible", http.StatusServiceUnavailable)
 		return
 	}
 
 	targetJID := req.Target
 	if targetJID == "" || targetJID == "admin" || targetJID == "default" {
-		targetJID = s.waClient.GetOwnerJID()
+		if s.waClient != nil {
+			targetJID = s.waClient.GetOwnerJID()
+		}
 	}
 	if targetJID == "" {
 		http.Error(w, "No hay administrador o destinatario configurado", http.StatusBadRequest)
@@ -286,8 +306,15 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 		msgText = fmt.Sprintf("[%s]: %s", req.Source, req.Message)
 	}
 
-	if err := s.waClient.SendMessage(r.Context(), targetJID, msgText); err != nil {
-		http.Error(w, fmt.Sprintf("Error enviando mensaje WhatsApp: %v", err), http.StatusInternalServerError)
+	var sendErr error
+	if s.chanMgr != nil {
+		sendErr = s.chanMgr.SendMessage(r.Context(), targetJID, msgText)
+	} else if s.waClient != nil {
+		sendErr = s.waClient.SendMessage(r.Context(), targetJID, msgText)
+	}
+
+	if sendErr != nil {
+		http.Error(w, fmt.Sprintf("Error enviando notificacion: %v", sendErr), http.StatusInternalServerError)
 		return
 	}
 
