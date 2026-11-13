@@ -1,46 +1,53 @@
-# Felix - Asistente y Agente Autonomo de Ingenieria y DevOps en WhatsApp y Telegram
+# Felix - Agente Autonomo Omnicanal de Ingenieria, DevOps y Desarrollo en Go
 
-Felix es un agente autonomo de alta eficiencia desarrollado en **Go** para la administracion, monitoreo y desarrollo en servidores **Linux** a traves de **WhatsApp** y **Telegram**.
+Felix es una plataforma de agente de inteligencia artificial autonomo de alto rendimiento desarrollada en **Go**, disenada para la administracion remota de infraestructura Linux, monitoreo de sistemas y desarrollo autonomo de software a traves de **WhatsApp** y **Telegram**.
 
-Diseñado para operar de forma continua, silenciosa y con consumo minimo de recursos (~30 MB de memoria RAM), Felix cuenta con una arquitectura omnicanal y completamente multimodal: combina transporte nativo punto a punto (WebSockets E2E con WhatsMeow y Telegram Bot API sin dependencias pesadas) con un motor de razonamiento ReAct, ejecucion concurrente de herramientas, enrutamiento deterministico de latencia cero, orquestacion de subagentes especializados y compatibilidad con el estandar **Model Context Protocol (MCP)**.
+Construido para operar de forma continua, silenciosa y con una huella de memoria ultra-reducida (**< 35 MB de RAM RSS**), Felix incorpora un motor de grafos de estado determinista, un arnes de ingenieria de software nativo con mapeo sintactico AST y parches difusos, persistencia transaccional con Time-Travel en SQLite WAL, una capa omnicanal desacoplada y un catalogo de 39 herramientas de sistema y diagnostico.
 
 ---
 
 ## Caracteristicas Principales
 
-- **Motor de Grafos de Estado y Persistencia Transaccional:** Motor de maquinas de estado deterministas (`internal/graph`) con checkpoints atomicos en SQLite WAL (`internal/checkpoint`), soporte para pausas asincronas Human-in-the-Loop (`ErrSuspend`), reanudacion tras caidas y Time-Travel (rollback a pasos previos).
-- **Arnes de Desarrollo Nativo en Go:** Subgrafo de ingenieria de software (`internal/harness`) con mapeo sintactico AST de repositorios, motor de parches Search/Replace difusos (fuzzy matching tolerante a sangria), aislamiento en ramas efimeras de Git (`felix-sandbox/task-<id>`), bucle REPL de verificacion de pruebas y plantillas embebidas con `//go:embed`.
-- **Arquitectura Omnicanal y Modular:** Soporte simultaneo o independiente para WhatsApp y Telegram. Si se prefiere operar exclusivamente por Telegram, el agente inicia sin solicitar codigo QR ni crear bases de datos de WhatsApp.
-- **Pipeline Multimodal Estandarizado:** Procesamiento agnostico al canal para notas de voz y audio PTT (transcripcion Whisper automatica), imagenes (analisis visual) y documentos adjuntos.
-- **Instalacion con Un Solo Comando:** Script automatizado (`./install.sh` o `make run`) que verifica dependencias, crea la estructura de directorios, compila el binario y lanza el servicio.
-- **Vinculacion Instantanea por Codigo QR en Terminal:** Al activar WhatsApp por primera vez, dibuja un codigo QR nativo en bloques ANSI dentro de la consola para vincular cualquier cuenta en segundos sin interfaz grafica.
-- **Configuracion Interactiva desde el Chat:** Menu interactivo con comandos `/config` y `/menu` para configurar o cambiar endpoints de inferencia (`api_base`), claves de API (`api_key`), modelos de lenguaje (`model`), servicios monitoreados y credenciales de Whisper directamente por chat (WhatsApp o Telegram).
-- **Asistente de Terminal Integrado:** Subcomando `./bin/felix setup` para quienes prefieran configurar variables de entorno y claves antes de arrancar.
-- **Ruta Rapida (Fast-Path < 5ms):** Diagnosticos del sistema (uptime, memoria RAM, espacio en disco, direcciones IP, servicios) respondidos inmediatamente sin consumir tokens ni invocar al LLM.
-- **Catalogo de 38 Herramientas Nativas:**
-  - Control de contenedores Docker y servicios systemd / PM2.
-  - Ejecucion segura de comandos bash con control de tiempo limite y truncamiento asimetrico.
-  - Inspeccion profunda y consultas analiticas sobre bases de datos SQLite locales.
-  - Navegacion e interaccion web headless con Chromium (Rod).
-  - Gestion de repositorios Git (status, diff, log, commit).
-  - Sintesis y transcripcion de notas de voz nativas en audio Opus (Edge-TTS y Groq Whisper).
-- **Subagentes Concurrentes Especializados:** Capacidad para delegar tareas complejas en segundo plano a subagentes con roles dedicados (`researcher`, `coder`, `sysadmin`, `auditor`), semaforo de concurrencia y generacion de reportes tecnicos persistentes en Markdown.
-- **Protocolo MCP (Model Context Protocol):** Integracion nativa cliente STDIO para conectar cualquier servidor MCP externo configurandolo en `config.json`.
-- **Persistencia Indestructible en SQLite:** Almacenamiento con modo WAL, respaldos atomicos programados (`VACUUM INTO`), recuperacion automatica tras reinicios y archivado historico mensual.
-- **Seguridad y Confidencialidad RBAC:** Separacion estricta de privilegios entre Administradores y Contactos, incluyendo directivas de veto para proteger datos sensibles de terceros.
+### 1. Motor de Grafos de Estado Determinista (`internal/graph`)
+* **Modelo Basado en Grafos (LangGraph-style):** Modela flujos tecnicos complejos como grafos dirigidos aciclicos o ciclicos con control riguroso de iteraciones maximas.
+* **Nodos y Aristas Condicionales:** Nodos atomicos (`NodeFunc`) enrutados dinamicamente mediante evaluadores deterministas (`EdgeRouter`) segun el estado resultante.
+* **Persistencia Transaccional y Time-Travel (`internal/checkpoint`):** Cada transicion de nodo genera un snapshot inmutable en SQLite (modo WAL). Permite retroceder a cualquier paso previo (`Rollback`) o reanudar tareas tras caidas del proceso (`Resume`).
+* **Pausas Human-in-the-Loop (HITL) Asincronas:** Suspende la ejecucion (`ErrSuspend`) ante operaciones sensibles (esquemas de base de datos, APIs criticas) esperando confirmacion humana sin mantener goroutines bloqueadas.
+
+### 2. Arnes de Desarrollo Nativo en Go (`internal/harness`)
+* **Reemplazo Nativo de Herramientas CLI Externas:** Elimina el sobrecoste de procesos externos pesados, ejecutando todo el ciclo de desarrollo dentro del propio binario en Go.
+* **Mapeo Sintactico AST de Repositorios (`internal/harness/repomap`):** Analiza el arbol de codigo del proyecto utilizando `go/parser` (y analizadores integrados para Python y TypeScript) para proveer contexto arquitectonico estructurado en menos de 1.500 tokens.
+* **Motor de Diff y Fuzzy Search/Replace (`internal/harness/patcher`):** Motor de sustitucion atomica basado en bloques `SEARCH/REPLACE` con algoritmo de distancia de Levenshtein para tolerancia a discrepancias de sangria y espacios (umbral > 90%).
+* **Sandbox Git Aislado (`internal/harness/sandbox`):** Ejecucion protegida en ramas efimeras (`felix-sandbox/task-<id>`), commits atomicos por paso y fusion controlada (`MergeToMain`) o descarte total (`Discard`) si las pruebas fallan.
+* **Bucle REPL de Compilacion y Linter (`internal/harness/runner`):** Deteccion automatica de ecosistemas (Go, Rust, Node, Python), ejecucion de pruebas con timeout estricto y sanitizacion de `stderr` para aislar causas raiz sin desbordar el contexto.
+* **Plantillas Maestras Embebidas (`internal/harness/prompts`):** Prompts de sistema, reglas sintacticas de diff y moldes de retroalimentacion embebidos en el binario estatico mediante `//go:embed`.
+
+### 3. Arquitectura Omnicanal Desacoplada (`internal/channel`)
+* **Soporte Simultaneo o Independiente:** Opera a traves de WhatsApp, Telegram o ambos canales en paralelo.
+* **Activacion Condicional:** Cada canal se activa o desactiva por configuracion (`whatsapp_enabled`, `telegram_enabled`). Si solo se requiere Telegram, el servicio levanta inmediatamente sin solicitar codigo QR ni crear bases de datos de WhatsApp.
+* **Conector Telegram en Go Puro (`internal/channel/telegram`):** Cliente ultraligero sobre la Telegram Bot API oficial con long-polling HTTP, soporte de mensajes Markdown (con fallback a texto plano), notas de voz Opus, imagenes y documentos.
+* **Canal WhatsApp E2E (`internal/channel/whatsapp`):** WhatsMeow (`go.mau.fi/whatsmeow`) sobre WebSockets nativos y cifrado Signal Protocol con renderizado QR interactivo en terminal.
+* **Pipeline Multimodal Estandarizado (`internal/channel/multimodal.go`):** Procesamiento unificado de notas de voz (transcripcion automatica con Whisper Groq/OpenAI), imagenes (inspeccion visual) y documentos adjuntos de cualquier canal.
+
+### 4. Nucleo de Inferencia y Rendimiento
+* **Gateway de Inferencia Integrado y Rotacion 429 (`internal/inference`):** Servidor proxy compatible con OpenAI (`/v1/chat/completions`) en el puerto `8055` con pool de claves y rotacion automatica inmediata ante agotamiento de cuota (HTTP 429).
+* **Ruta Rapida de Latencia Cero (Fast-Path < 5ms):** Consultas deterministicas de telemetria (uptime, memoria, CPU, interfaces de red, servicios) respondidas al instante sin consumir tokens.
+* **Subagentes Concurrentes Especializados:** Delegacion de tareas pesadas en segundo plano (`researcher`, `coder`, `sysadmin`, `auditor`) con semaforo de concurrencia y reportes estructurados en Markdown.
+* **Protocolo MCP (Model Context Protocol):** Integracion nativa de servidores MCP externos via STDIO y JSON-RPC 2.0.
+* **Catalogo de 39 Herramientas de Sistema:** Incluye `harness_develop`, `git_tool`, `docker`, `sqlite_inspector`, `exec`, `web_search`, `browser` headless, `doc_engine` y control de servicios.
 
 ---
 
 ## Requisitos del Sistema
 
-- **Sistema Operativo:** Linux (Debian, Ubuntu, Linux Mint, Fedora, Arch Linux, Alpine).
-- **Go:** Version 1.22 o superior.
-- **Dependencias del Sistema (Recomendadas):**
-  - `ffmpeg` (necesario para codificacion Opus de notas de voz de WhatsApp).
-  - `gcc` o `build-essential` (para extensiones SQLite nativas si aplica).
-  - `git` (para herramientas de versionado).
+* **Sistema Operativo:** Linux (Debian, Ubuntu, Linux Mint, Fedora, Arch Linux, Alpine).
+* **Go:** Version 1.22 o superior.
+* **Dependencias Recomendadas:**
+  * `ffmpeg` (para codificacion de audio Opus en notas de voz).
+  * `git` (para versionado y sandbox).
+  * `build-essential` (para extensiones de compilacion si aplica).
 
-En distribuciones basadas en Debian/Ubuntu:
+Instalacion en Debian / Ubuntu:
 ```bash
 sudo apt update && sudo apt install -y golang ffmpeg build-essential git
 ```
@@ -49,116 +56,124 @@ sudo apt update && sudo apt install -y golang ffmpeg build-essential git
 
 ## Inicio Rapido
 
-### 1. Clonar el repositorio
+### 1. Clonar el Repositorio
 ```bash
 git clone https://github.com/armajedon1/felix-agent.git
 cd felix-agent
 ```
 
-### 2. Ejecutar el instalador
+### 2. Ejecutar el Instalador
 ```bash
 ./install.sh
 ```
+El instalador verificara el entorno, generara la estructura de carpetas (`bin/`, `data/`, `workspace/`), creara `config.json` a partir de la plantilla y compilara el binario `bin/felix`.
 
-El script verificara el entorno, creara las carpetas necesarias (`bin/`, `data/`, `workspace/`), generara `config.json` si no existe y compilara el binario `bin/felix`.
+---
 
-### 3. Iniciar Felix y Escanear el Codigo QR
-```bash
-./bin/felix
+## Modos de Operacion y Canales
+
+### Opcion A: Operar Unicamente con Telegram
+En `config.json`:
+```json
+{
+  "whatsapp_enabled": false,
+  "telegram_enabled": true,
+  "telegram_bot_token": "TU_TELEGRAM_BOT_TOKEN",
+  "telegram_allowed": ["TU_TELEGRAM_USER_ID"]
+}
 ```
+Inicie el servicio con `./bin/felix`. El agente iniciara de forma instantanea sin solicitar codigo QR ni conectar WhatsMeow.
 
-En la pantalla de la terminal aparecera el codigo QR:
+### Opcion B: Operar con WhatsApp
+En `config.json`:
+```json
+{
+  "whatsapp_enabled": true,
+  "telegram_enabled": false
+}
+```
+Al ejecutar `./bin/felix`, la terminal renderizara el codigo QR interactivo:
 1. Abra WhatsApp en su telefono.
-2. Vaya a **Dispositivos vinculados** -> **Vincular un dispositivo**.
-3. Escanee el codigo QR que aparece en la terminal.
-4. Una vez vinculado, la sesion queda guardada localmente en `data/whatsapp.db`.
+2. Acceda a **Dispositivos vinculados** -> **Vincular un dispositivo**.
+3. Escanee el codigo QR en la terminal. La sesion quedara almacenada de forma segura en `data/whatsapp.db`.
 
-### 4. Configuracion Instantanea desde WhatsApp
-Al escanear el codigo QR y enviar su primer mensaje ("hola" o cualquier texto), Felix detecta automaticamente al remitente y lo registra como el **Administrador Principal**.
-
-De forma instantanea, Felix responde con el **Menu de Configuracion Rapida**:
-- **Opcion 1: Google Gemini (Recomendado):** `/config gemini <TU_API_KEY>`
-- **Opcion 2: OpenAI (GPT-4o):** `/config openai <TU_API_KEY>`
-- **Opcion 3: Groq Cloud (Ultra-rapido + Transcripcion Whisper):** `/config groq <TU_API_KEY>`
-- **Opcion 4: Ollama Local (Sin claves de API):** `/config ollama`
-- **Opcion 5: Antigravity Tools / Proxy Local:** `/config antigravity`
-- **Opcion 6: Multiples Claves con Rotacion 429:** `/config keys add <OTRA_API_KEY>`
-- **Opcion 7: Endpoint Personalizado:** `/config apibase <URL>` / `/config apikey <CLAVE>` / `/config model <MODELO>`
-
-Simplemente copie y pegue la linea correspondiente en WhatsApp para que Felix quede 100% activo y listo para razonar. Puede enviar `/menu` en cualquier momento para volver a ver estas opciones.
+### Opcion C: Operacion Dual Omnicanal
+Active ambos canales (`"whatsapp_enabled": true`, `"telegram_enabled": true`) para atender consultas simultaneas desde WhatsApp y Telegram con memoria e historial compartidos.
 
 ---
 
-## Gateway de Inferencia Integrado y Rotacion de Claves
+## Configuracion desde el Chat
 
-Felix incluye una **puerta de enlace de inferencia integrada** (compatible con el estandar OpenAI) alojada en su servidor interno (puerto `8055` por defecto):
-- **Endpoints Expuestos:**
-  - `POST /v1/chat/completions`
-  - `GET /v1/models`
-- **Pool de Claves (KeyPool):** Soporte para multiples claves de API con rotacion atomica y balanceo.
-- **Auto-Recuperacion ante Limites de Cuota (HTTP 429):** Si un proveedor agota la cuota (Resource Exhausted / Rate Limit), el gateway rota inmediatamente a la siguiente clave disponible en el pool y reintenta la solicitud sin interrumpir al usuario.
-- **Compatibilidad con Clientes Externos:** Puede apuntar cualquier aplicacion externa (Claude Code, extensiones de VS Code, curl o agentes autonomos) a `http://127.0.0.1:8055/v1` para consumir la inferencia de Felix.
+Al enviar el primer mensaje ("hola" o `/menu`), Felix detecta al remitente y lo registra como Administrador Principal, respondiendo con el menu interactivo:
 
-O si utiliza proxies compatibles con OpenAI (como Antigravity Tools, Ollama o LocalAI):
-```text
-/config apibase http://127.0.0.1:8045/v1
-/config model gemini-2.5-flash
-```
-
-Para verificar el estado actual de la configuracion:
-```text
-/config status
-```
+* **Google Gemini (Recomendado):** `/config gemini <TU_API_KEY>`
+* **OpenAI (GPT-4o):** `/config openai <TU_API_KEY>`
+* **Groq Cloud (Whisper + Llama 3.3):** `/config groq <TU_API_KEY>`
+* **Ollama Local (Sin claves de API):** `/config ollama`
+* **Antigravity Tools / Proxy Local:** `/config antigravity`
+* **Agregar Claves al Pool (Rotacion 429):** `/config keys add <OTRA_API_KEY>`
+* **Endpoint Personalizado:** `/config apibase <URL>` / `/config apikey <KEY>` / `/config model <NAME>`
 
 ---
 
-## Comandos Directos de WhatsApp
+## Comandos Directos Disponibles
 
-Felix incluye comandos administrativos de ejecucion instantanea que operan sin latencia ni consumo de tokens:
+Los comandos directos son procesados por el enrutador rapido con respuesta instantanea sin consumo de tokens:
 
 | Comando | Descripcion |
 | :--- | :--- |
-| `/help` | Guia completa de comandos disponibles. |
-| `/status` | Diagnostico completo en vivo: CPU, memoria, disco, red y servicios. |
-| `/config` | Panel de configuracion interactiva de inferencia y parametros. |
-| `/services` | Estado en vivo de procesos PM2, systemd o Docker monitoreados. |
+| `/help` | Guia interactiva de comandos disponibles. |
+| `/status` | Diagnostico completo en vivo: CPU, memoria, almacenamiento, red y servicios. |
+| `/config` | Panel de configuracion interactiva de inferencia y parametros del agente. |
+| `/services` | Estado en tiempo real de servicios monitoreados (PM2, systemd, Docker). |
 | `/sub <id>` | Lectura de reportes generados por subagentes en segundo plano. |
-| `/backup` | Respaldo atomico inmediato de todas las bases de datos en `data/backups/`. |
-| `/logs [rotate]` | Diagnostico de consumo de logs o forzado de rotacion preventiva. |
-| `/voz [on\|off]` | Modo manos libres: respuestas narradas por nota de voz. |
-| `/clear` | Limpieza del historial de la sesion conversacional activa. |
-| `/clean` | Purga inmediata de descargas antiguas y archivos temporales. |
+| `/backup` | Respaldo atomico inmediato de bases SQLite (`VACUUM INTO`). |
+| `/logs [rotate]` | Diagnostico de consumo de logs y rotacion preventiva. |
+| `/voz [on\|off]` | Modo manos libres: respuestas narradas por notas de voz Opus. |
+| `/clear` | Reinicio de la memoria conversacional activa de la sesion. |
+| `/clean` | Purga inmediata de archivos temporales y descargas antiguas. |
 
 ---
 
-## Estructura del Proyecto
+## Estructura de Directorios
 
 ```text
-felix/
+felix-agent/
 ├── bin/                         # Binarios compilados (ignorado por git)
 ├── cmd/felix/main.go            # Punto de entrada de la aplicacion
-├── config.example.json          # Plantilla base de configuracion
+├── config.example.json          # Plantilla base de configuracion limpia
 ├── data/                        # Bases de datos SQLite y descargas locales
 ├── ecosystem.config.cjs         # Configuracion para despliegue con PM2
-├── install.sh                   # Script automatizado de instalacion
-├── run.sh                       # Script directo de ejecucion
-├── Makefile                     # Metas de compilacion, prueba y limpieza
+├── install.sh                   # Script de instalacion automatizada
+├── Makefile                     # Reglas de compilacion, prueba y ejecucion
 ├── internal/
 │   ├── agent/                   # ReAct Loop, Engine, Failover y Subagentes
-│   ├── config/                  # Validacion y persistencia atomica de configuracion
+│   ├── channel/                 # Abstraccion omnicanal y pipeline multimodal
+│   │   ├── telegram/            # Conector nativo Telegram Bot API en Go puro
+│   │   └── whatsapp/            # Adaptador desacoplado para WhatsMeow
+│   ├── checkpoint/              # Persistencia transaccional SQLite WAL con Time-Travel
+│   ├── config/                  # Validacion y guardado atomico de configuracion
 │   ├── digest/                  # Telemetria asincrona en memoria
-│   ├── fastpath/                # Respuestas de latencia cero (< 5ms)
+│   ├── fastpath/                # Enrutador de latencia cero (< 5ms)
+│   ├── graph/                   # Motor de grafos de estado determinista (LangGraph-style)
+│   ├── harness/                 # Arnes nativo de desarrollo de software
+│   │   ├── patcher/             # Motor de diffs y fuzzy search/replace Levenshtein
+│   │   ├── prompts/             # Directivas de ingenieria embebidas (//go:embed)
+│   │   ├── repomap/             # Mapeador sintactico AST de repositorios (< 1500 tokens)
+│   │   ├── runner/              # Ejecutor de pruebas y compilacion con sanitizador
+│   │   └── sandbox/             # Aislamiento en ramas efimeras de Git
 │   ├── healer/                  # Motor de diagnostico y auto-curacion de servicios
 │   ├── health/                  # Servidor HTTP Prometheus y webhooks (:8055)
+│   ├── inference/               # Gateway proxy OpenAI con pool de claves y rotacion 429
 │   ├── mcp/                     # Cliente STDIO para Model Context Protocol
-│   ├── memory/                  # RAG local, indexacion FTS5 y SOPs
-│   ├── minecraft/               # Administracion RCON para servidores de juego
-│   ├── scheduler/               # Planificador cron, rotacion y respaldos
-│   ├── tools/                   # Catalogo de 38 herramientas de sistema y desarrollo
-│   ├── users/                   # Control de acceso basado en roles (RBAC) y vetos
-│   └── whatsapp/                # WhatsMeow, renderizado QR, TTS y transcriptor Whisper
+│   ├── memory/                  # RAG local, indexacion FTS5 y procedimientos operativos
+│   ├── minecraft/               # Protocolo RCON para servidores de juego
+│   ├── scheduler/               # Planificador cron y recordatorios persistentes
+│   ├── tools/                   # Catalogo de 39 herramientas de sistema (harness_develop, etc.)
+│   ├── users/                   # Control de acceso RBAC y directivas de confidencialidad
+│   └── whatsapp/                # WhatsMeow, renderizado QR y transcriptor Whisper
 ├── skills/                      # Catalogo extensible de habilidades
-├── systemd/felix.service        # Unidad de servicio para Systemd
+├── systemd/felix.service        # Archivo de unidad para Systemd
 └── workspace/                   # Espacio de trabajo del agente y reportes Markdown
 ```
 
@@ -166,7 +181,7 @@ felix/
 
 ## Despliegue en Produccion
 
-### Opcion A: Con PM2 (Recomendado)
+### Con PM2 (Recomendado)
 ```bash
 npm install -g pm2
 pm2 start ecosystem.config.cjs
@@ -174,36 +189,30 @@ pm2 save
 pm2 startup
 ```
 
-### Opcion B: Con Systemd
-1. Copie el archivo de servicio:
-   ```bash
-   sudo cp systemd/felix.service /etc/systemd/system/felix.service
-   ```
-2. Ajuste las rutas y el usuario en `/etc/systemd/system/felix.service`.
-3. Recargue y active el servicio:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now felix
-   ```
+### Con Systemd
+```bash
+sudo cp systemd/felix.service /etc/systemd/system/felix.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now felix
+```
 
 ---
 
 ## Servidor de Telemetria y Webhooks
 
-Felix incluye un servidor HTTP ligero escuchando por defecto en el puerto `8055`:
-- `GET /healthz`: Comprobacion de salud (liveness probe) con estado de conectividad a WhatsApp y base de datos.
-- `GET /metrics`: Metricas en formato Prometheus (tokens consumidos, consultas al LLM, llamadas a herramientas, memoria activa).
-- `POST /api/notify`: Webhook para que scripts locales o servicios de monitoreo (Uptime Kuma, cron jobs) envien notificaciones push directas al administrador en WhatsApp.
+Felix expone un servidor HTTP interno en el puerto `8055`:
+* `GET /healthz`: Comprobacion de salud con estado de canales activos (WhatsApp, Telegram) y bases de datos.
+* `GET /metrics`: Metricas en formato Prometheus (tokens consumidos, consultas a LLMs, llamadas a herramientas).
+* `POST /api/notify`: Webhook para envio de alertas push directas al administrador:
 
-Ejemplo de notificacion via webhook:
 ```bash
 curl -X POST http://127.0.0.1:8055/api/notify \
   -H "Content-Type: application/json" \
-  -d '{"message": "Alerta: Despliegue completado exitosamente", "source": "CI/CD"}'
+  -d '{"message": "Alerta: Despliegue de produccion completado", "source": "CI/CD"}'
 ```
 
 ---
 
 ## Licencia y Uso Comercial
 
-Este proyecto se distribuye bajo terminos listos para adaptacion comercial, despliegues corporativos o codigo abierto independiente. No contiene dependencias propietarias ni datos personales vinculados.
+Este proyecto se distribuye bajo terminos libres para adaptacion comercial, despliegues corporativos o desarrollo de codigo abierto. No contiene dependencias propietarias ni datos personales vinculados.
