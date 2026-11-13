@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"felix-go/internal/agent"
 	"felix-go/internal/channel"
@@ -328,7 +331,7 @@ func main() {
 	// 1. Canal WhatsApp (Condicional: si esta habilitado en configuracion)
 	if cfg.WhatsAppEnabled {
 		log.Println("Inicializando canal de comunicacion WhatsApp...")
-		waDBPath := filepath.Join(cfg.DataDir, "whatsapp.db")
+		waDBPath := resolveWhatsAppDBPath(cfg.DataDir)
 		var err error
 		waClient, err = whatsapp.NewClient(cfg, engine, sched, memStore, userMgr, digestWatcher, scratchpadMgr, waDBPath)
 		if err != nil {
@@ -457,4 +460,33 @@ func main() {
 
 	chanManager.StopAll()
 	log.Println("Felix detenido ordenadamente.")
+}
+
+func resolveWhatsAppDBPath(dataDir string) string {
+	waDBPath := filepath.Join(dataDir, "whatsapp.db")
+	legacyDBPath := filepath.Join(dataDir, "felix.db")
+
+	if hasRegisteredDevice(waDBPath) {
+		return waDBPath
+	}
+	if hasRegisteredDevice(legacyDBPath) {
+		log.Printf("[whatsapp] sesion activa detectada en base historica: %s", legacyDBPath)
+		return legacyDBPath
+	}
+	return waDBPath
+}
+
+func hasRegisteredDevice(dbPath string) bool {
+	if _, err := os.Stat(dbPath); err != nil {
+		return false
+	}
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(2000)")
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM whatsmeow_device").Scan(&count)
+	return err == nil && count > 0
 }
