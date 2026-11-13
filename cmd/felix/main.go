@@ -170,10 +170,6 @@ func main() {
 	reg.Register(&tools.ApplyPatchTool{DefaultWorkDir: cfg.WorkspaceDir})
 	reg.Register(&tools.ProcessTool{})
 	reg.Register(&tools.AntigravityTool{})
-	reg.Register(&tools.HarnessDevelopTool{
-		DefaultRepoDir:  cfg.WorkspaceDir,
-		CheckpointStore: ckptStore,
-	})
 	reg.Register(&tools.PcTaskTool{})
 	reg.Register(&tools.GcliTool{})
 	reg.Register(&tools.HomelabTool{})
@@ -244,6 +240,13 @@ func main() {
 	// Inicializar Motor Agentico (ReAct Loop) con persistencia en disco
 	engine := agent.NewEngine(cfg, reg, histMgr)
 	engine.SetScratchpadManager(scratchpadMgr)
+
+	// Registrar arnes nativo de desarrollo conectado al motor de inferencia LLM
+	reg.Register(&tools.HarnessDevelopTool{
+		DefaultRepoDir:  cfg.WorkspaceDir,
+		Completer:       engine,
+		CheckpointStore: ckptStore,
+	})
 
 	// Inicializar Monitor de Telemetria Asincrono y Digest Precomputado
 	digestWatcher := digest.NewWatcher(2 * time.Minute)

@@ -437,6 +437,26 @@ func (e *Engine) Run(ctx context.Context, sessionID, userInput string, extraSyst
 	return "Solicitud procesada con exito en base a los datos del sistema.", nil
 }
 
+// Complete genera una respuesta de texto simple dados un systemPrompt y un userPrompt, satisfaciendo harness.LLMCompleter.
+func (e *Engine) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	messages := []OpenAIMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+	req := ChatCompletionRequest{
+		Model:    e.cfg.Model,
+		Messages: messages,
+	}
+	resp, err := e.executeCompletion(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("el LLM no retorno opciones de respuesta")
+	}
+	return cleanFormatting(resp.Choices[0].Message.Content), nil
+}
+
 func (e *Engine) getActiveKey() string {
 	if e.keyPool != nil && e.keyPool.Count() > 0 {
 		return e.keyPool.GetCurrentKey()
