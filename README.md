@@ -140,14 +140,17 @@ Los comandos directos son procesados por el enrutador rápido con respuesta inst
 ```text
 felix-agent/
 ├── bin/                         # Binarios compilados (ignorado por git)
-├── cmd/felix/main.go            # Punto de entrada de la aplicación
+├── cmd/
+│   ├── benchmark/main.go        # Suite de evaluación de rendimiento y telemetría
+│   └── felix/main.go            # Punto de entrada de la aplicación
+├── BENCHMARKS.md                # Informe y metodología de evaluación de rendimiento
 ├── config.example.json          # Plantilla base de configuración limpia
 ├── data/                        # Bases de datos SQLite y descargas locales
 ├── ecosystem.config.cjs         # Configuración para despliegue con PM2
 ├── install.sh                   # Script de instalación automatizada
 ├── Makefile                     # Reglas de compilación, prueba y ejecución
 ├── internal/
-│   ├── agent/                   # ReAct Loop, Engine, Failover y Subagentes
+│   ├── agent/                   # ReAct Loop, Engine, Execution Gate y Subagentes
 │   ├── channel/                 # Abstracción omnicanal y pipeline multimodal
 │   │   ├── telegram/            # Conector nativo Telegram Bot API en Go puro
 │   │   └── whatsapp/            # Adaptador desacoplado para WhatsMeow
@@ -195,6 +198,22 @@ sudo cp systemd/felix.service /etc/systemd/system/felix.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now felix
 ```
+
+---
+
+## Evaluación de Rendimiento y Telemetría
+
+Félix cuenta con una suite nativa de evaluación de rendimiento y telemetría concurrente de hardware ([`cmd/benchmark/main.go`](cmd/benchmark/main.go)) para validar la latencia y el consumo de recursos en hardware embebido (Raspberry Pi 5 / Debian arm64):
+
+| Subsistema Evaluado | Carga / Operaciones | Tiempo Total | Rendimiento | Latencia Promedio |
+| :--- | :--- | :--- | :--- | :--- |
+| **Motor StateGraph (LangGraph en Go)** | 500 corridas (1.000 transiciones + SQLite WAL) | `97,90 ms` | **10.213 pasos/seg** | **97,90 µs** / paso |
+| **Arnés de Desarrollo (`harness_develop`)** | Ciclo E2E completo (AST $\rightarrow$ Sandbox $\rightarrow$ Patch $\rightarrow$ Test $\rightarrow$ Merge) | `1,41 s` | **1 ciclo E2E completo** | **1,41 s** (con `go test` real) |
+| **Compuerta de Ejecución (*Execution Gate*)** | 200.000 evaluaciones semánticas (confirmación/hesitación) | `642,08 ms` | **311.484 ops/seg** | **3,21 µs** / evaluación |
+
+* **Consumo de Memoria:** Huella residente pico (RSS) de **18,36 MB** y heap activo final de **1,43 MB** (muy por debajo del límite de diseño de 35 MB).
+* **Impacto en CPU:** Carga media controlada de **32,43%** en procesador quad-core Cortex-A76.
+* **Metodología y Reproducción:** Consulte [`BENCHMARKS.md`](BENCHMARKS.md) para el desglose detallado de pruebas, telemetría y comandos de ejecución.
 
 ---
 
