@@ -1,5 +1,6 @@
 # Binarios
-bin/felix
+bin/*
+!bin/.gitkeep
 *.exe
 
 # Almacenamiento local y SQLite
