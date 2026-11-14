@@ -7,6 +7,7 @@ import (
 	"log"
 	"runtime/debug"
 	"sync"
+	"time"
 )
 
 // Tool define la interfaz estandar que debe implementar cada herramienta en felix-go.
@@ -113,6 +114,14 @@ func (r *Registry) GetOpenAISchemasForRole(isAdmin bool) []OpenAIToolSchema {
 	return schemas
 }
 
+var heavyToolsList = map[string]bool{
+	"browser_agent":     true,
+	"subagent_spawn":    true,
+	"antigravity_cli":   true,
+	"background_worker": true,
+	"harness_develop":   true,
+}
+
 // Execute ejecuta la herramienta solicitada y retorna su salida (consultando cache si es aplicable).
 func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessage) (string, error) {
 	t, ok := r.Get(name)
@@ -124,6 +133,21 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 		if cached, hit := r.cache.Get(name, args); hit {
 			return cached, nil
 		}
+	}
+
+	// Hardening defensivo de timeout por herramienta:
+	// Si el contexto entrante no tiene limite o supera el umbral maximo de seguridad,
+	// se aplica un timeout defensivo (120s para herramientas pesadas, 45s para estandar).
+	timeout := 45 * time.Second
+	if heavyToolsList[name] {
+		timeout = 120 * time.Second
+	}
+
+	execCtx := ctx
+	var cancel context.CancelFunc
+	if deadline, hasDeadline := ctx.Deadline(); !hasDeadline || time.Until(deadline) > timeout {
+		execCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
 
 	var (
@@ -138,12 +162,15 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 				err = fmt.Errorf("error interno en herramienta %s: %v", name, rec)
 			}
 		}()
-		res, err = t.Execute(ctx, args)
+		res, err = t.Execute(execCtx, args)
 	}()
 
 	if err != nil {
 		return "", err
 	}
+
+	// Proteccion global de memoria contra desbordes de salida
+	res = truncateOutput(res, 25000)
 
 	if r.cache != nil {
 		r.cache.Set(name, args, res)
