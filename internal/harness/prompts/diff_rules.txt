@@ -14,3 +14,9 @@ Reglas de aplicacion:
 2. Cada archivo modificado debe llevar su propio encabezado ### ruta/al/archivo.ext antes de su bloque.
 3. Puedes emitir multiples bloques para diferentes archivos o diferentes regiones del mismo archivo.
 4. No envies explicaciones ni texto conversacional redundante alrededor de los bloques.
+5. Para crear un archivo nuevo desde cero, especifica su ruta en el encabezado y deja el bloque SEARCH completamente vacio:
+### ruta/del/nuevo_archivo.ext
+<<<<<<< SEARCH
+=======
+[Contenido integro del nuevo archivo]
+>>>>>>> REPLACE

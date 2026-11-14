@@ -102,6 +102,7 @@ var heavyTools = map[string]string{
 	"subagent_spawn":    "Despachando subagente autonomo en segundo plano...",
 	"antigravity_cli":   "Delegando tarea de desarrollo a Antigravity CLI...",
 	"background_worker": "Ejecutando tarea concurrente en segundo plano...",
+	"harness_develop":   "Ejecutando arnes de desarrollo: analisis AST, parches y verificacion...",
 }
 
 func (e *Engine) SetProgressFunc(fn func(sessionID, statusText string)) {
@@ -439,6 +440,9 @@ func (e *Engine) Run(ctx context.Context, sessionID, userInput string, extraSyst
 
 // Complete genera una respuesta de texto simple dados un systemPrompt y un userPrompt, satisfaciendo harness.LLMCompleter.
 func (e *Engine) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	compCtx, compCancel := context.WithTimeout(ctx, 90*time.Second)
+	defer compCancel()
+
 	messages := []OpenAIMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
@@ -447,7 +451,7 @@ func (e *Engine) Complete(ctx context.Context, systemPrompt, userPrompt string) 
 		Model:    e.cfg.Model,
 		Messages: messages,
 	}
-	resp, err := e.executeCompletion(ctx, req)
+	resp, err := e.executeCompletion(compCtx, req)
 	if err != nil {
 		return "", err
 	}

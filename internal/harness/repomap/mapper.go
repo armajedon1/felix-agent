@@ -127,12 +127,16 @@ func extractGoSymbols(fset *token.FileSet, path string) []string {
 		return nil
 	}
 
+	isMain := node.Name.Name == "main"
 	var symbols []string
 
 	for _, decl := range node.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			if !d.Name.IsExported() {
+			if !isMain && !d.Name.IsExported() {
+				continue
+			}
+			if isMain && (d.Name.Name == "init" || (d.Name.Name == "main" && d.Recv == nil)) {
 				continue
 			}
 			var buf bytes.Buffer
@@ -149,7 +153,7 @@ func extractGoSymbols(fset *token.FileSet, path string) []string {
 		case *ast.GenDecl:
 			if d.Tok == token.TYPE {
 				for _, spec := range d.Specs {
-					if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.IsExported() {
+					if ts, ok := spec.(*ast.TypeSpec); ok && (isMain || ts.Name.IsExported()) {
 						kind := "type"
 						switch ts.Type.(type) {
 						case *ast.StructType:

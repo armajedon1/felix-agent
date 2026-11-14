@@ -176,3 +176,29 @@ func Start() string {
 		t.Errorf("parche no se reflejo en el archivo: %s", string(updated))
 	}
 }
+
+func TestApplyFilePatch_NewFile(t *testing.T) {
+	tempDir := t.TempDir()
+	newFile := filepath.Join(tempDir, "nested", "new_service.go")
+
+	blocks := []Block{
+		{
+			FilePath: "nested/new_service.go",
+			Search:   "",
+			Replace:  "package nested\n\nfunc New() string { return \"ok\" }\n",
+		},
+	}
+
+	if err := ApplyFilePatch(newFile, blocks); err != nil {
+		t.Fatalf("error creando nuevo archivo mediante parche: %v", err)
+	}
+
+	content, err := os.ReadFile(newFile)
+	if err != nil {
+		t.Fatalf("error leyendo nuevo archivo creado: %v", err)
+	}
+
+	if !strings.Contains(string(content), "func New()") {
+		t.Fatalf("contenido inesperado: %s", string(content))
+	}
+}

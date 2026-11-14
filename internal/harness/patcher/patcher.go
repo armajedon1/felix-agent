@@ -23,7 +23,28 @@ type Block struct {
 	Replace  string `json:"replace"`
 }
 
-var filePathRegex = regexp.MustCompile(`(?m)^(?:###|---|\*{3}|File:|Archivo:)\s*([^\s\n\r]+)`)
+var filePathRegex = regexp.MustCompile(`(?i)^\s*(?:#{1,6}\s*)?(?:---|File:|Archivo:|Path:|Ruta:)?\s*[*"']?([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10})[*"']?:?\s*$`)
+var fallbackPathRegex = regexp.MustCompile(`(?i)^(?:#{1,6}|---|\*{1,3}|File:|Archivo:|Path:|Ruta:)\s*[*"']?([^\s\n\r"'*]+)`)
+
+func detectFilePath(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+	if matches := filePathRegex.FindStringSubmatch(line); len(matches) > 1 {
+		candidate := strings.Trim(matches[1], "`'\"*:")
+		if candidate != "" {
+			return candidate
+		}
+	}
+	if matches := fallbackPathRegex.FindStringSubmatch(line); len(matches) > 1 {
+		candidate := strings.Trim(matches[1], "`'\"*:")
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
 
 // ParseBlocks extrae los bloques Search/Replace del texto generado por el LLM.
 func ParseBlocks(raw string) ([]Block, error) {
@@ -37,11 +58,8 @@ func ParseBlocks(raw string) ([]Block, error) {
 		line := lines[i]
 
 		// Detectar ruta de archivo si precede al bloque
-		if matches := filePathRegex.FindStringSubmatch(line); len(matches) > 1 {
-			candidate := strings.Trim(matches[1], "`'\"*:")
-			if candidate != "" {
-				lastDetectedPath = candidate
-			}
+		if p := detectFilePath(line); p != "" {
+			lastDetectedPath = p
 		}
 
 		if strings.TrimSpace(line) == SearchMarker {
@@ -98,6 +116,9 @@ func ParseBlocks(raw string) ([]Block, error) {
 func ApplyBlock(content string, b Block) (string, error) {
 	// 1. Coincidencia exacta
 	if b.Search == "" {
+		if content == "" {
+			return b.Replace, nil
+		}
 		return content + "\n" + b.Replace, nil
 	}
 
@@ -135,7 +156,11 @@ func ApplyBlock(content string, b Block) (string, error) {
 func ApplyFilePatch(filePath string, blocks []Block) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("error leyendo archivo para parche %s: %w", filePath, err)
+		if os.IsNotExist(err) {
+			data = []byte("")
+		} else {
+			return fmt.Errorf("error leyendo archivo para parche %s: %w", filePath, err)
+		}
 	}
 
 	content := string(data)
@@ -150,6 +175,9 @@ func ApplyFilePatch(filePath string, blocks []Block) error {
 
 	// Escritura atomica mediante archivo temporal en el mismo directorio
 	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("error creando directorio %s: %w", dir, err)
+	}
 	tmpFile, err := os.CreateTemp(dir, "felix-patch-*.tmp")
 	if err != nil {
 		return fmt.Errorf("error creando archivo temporal de parche: %w", err)
