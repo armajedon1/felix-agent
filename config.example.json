@@ -23,5 +23,6 @@
   "monitored_services": [],
   "workstation_host": "",
   "max_iterations": 15,
+  "max_confirmations": 1,
   "mcp_servers": {}
 }

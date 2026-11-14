@@ -41,6 +41,7 @@ type Config struct {
 	MonitoredServices []string          `json:"monitored_services"`
 	WorkstationHost   string            `json:"workstation_host,omitempty"`
 	MaxIterations     int               `json:"max_iterations"`
+	MaxConfirmations  int               `json:"max_confirmations,omitempty"`
 	MCPServers        map[string]struct {
 		Command string            `json:"command"`
 		Args    []string          `json:"args"`
@@ -82,6 +83,7 @@ Principios de comportamiento:
 		HealthPort:        "8055",
 		MonitoredServices: []string{},
 		MaxIterations:     15,
+		MaxConfirmations:  1,
 	}
 }
 

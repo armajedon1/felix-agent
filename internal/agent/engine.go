@@ -278,6 +278,7 @@ func (e *Engine) Run(ctx context.Context, sessionID, userInput string, extraSyst
 
 	// 2. Tool Gating Dinamico: Seleccionar exclusivamente las herramientas requeridas por la intencion
 	schemas := e.registry.SelectTools(userInput, activeGoal, isAdmin)
+	forceToolsNextIter := false
 
 	for iter := 0; iter < e.cfg.MaxIterations; iter++ {
 		var currentTools []tools.OpenAIToolSchema
@@ -300,6 +301,10 @@ func (e *Engine) Run(ctx context.Context, sessionID, userInput string, extraSyst
 				Role:    "user",
 				Content: "[AVISO DE SISTEMA]: Ya dispones de toda la informacion. No invoques mas herramientas; redacta de inmediato la respuesta final clara y completa para el usuario.",
 			})
+		} else if forceToolsNextIter && len(schemas) > 0 {
+			currentTools = schemas
+			toolChoice = "required"
+			forceToolsNextIter = false
 		} else {
 			currentTools = schemas
 			toolChoice = "auto"
@@ -402,6 +407,24 @@ func (e *Engine) Run(ctx context.Context, sessionID, userInput string, extraSyst
 		// Si no hay tool calls o el modelo devolvio texto directo
 		finalReply := strings.TrimSpace(assistantMsg.Content)
 		if finalReply != "" {
+			maxConf := e.cfg.MaxConfirmations
+			if maxConf <= 0 {
+				maxConf = 1
+			}
+
+			// Compuerta de Ejecucion (Execution Gate):
+			// Si el usuario emitio una confirmacion o una orden imperativa, pero el modelo en iteraciones
+			// iniciales vacilo devolviendo texto para pedir confirmaciones redundantes o delegar pasivamente:
+			if iter < 2 && maxConf <= 1 && IsAffirmativeOrExecutionCommand(userInput) && IsHesitatingOrAskingConfirmation(finalReply) && len(schemas) > 0 {
+				log.Printf("[Execution Gate] Interceptada hesitacion del modelo en iter %d. Usuario ya confirmo ('%s'). Forzando ejecucion obligatoria de herramientas en iter %d...", iter, userInput, iter+1)
+				conversation = append(conversation, OpenAIMessage{
+					Role:    "user",
+					Content: "[DIRECTIVA DE CONTROL - EJECUCION INMEDIATA]: El usuario ya otorgo autorizacion y confirmacion expresa ('" + userInput + "'). Queda terminantemente prohibido pedir mas confirmaciones, demorar con explicaciones o transferir comandos para que los ejecute el usuario. Ejecuta de inmediato las acciones necesarias utilizando tus herramientas y devuelve directamente los resultados tecnicos finales.",
+				})
+				forceToolsNextIter = true
+				continue
+			}
+
 			finalReply = cleanFormatting(finalReply)
 
 			// Guardar interaccion en historial persistente
