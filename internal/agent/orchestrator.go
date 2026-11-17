@@ -108,8 +108,29 @@ func (o *ReActOrchestrator) Run(ctx context.Context, sessionID, userInput, extra
 			ToolChoice: toolChoice,
 		}
 
-		chatResp, err := o.provider.Execute(ctx, reqBody)
+		// Otorgar presupuesto de tiempo garantizado (Grace Period) para la inferencia
+		execCtx := ctx
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 20*time.Second {
+			var cancel context.CancelFunc
+			execCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 35*time.Second)
+			defer cancel()
+		}
+
+		chatResp, err := o.provider.Execute(execCtx, reqBody)
 		if err != nil {
+			// Degradacion elegante: Si se ejecutaron herramientas durante el turno,
+			// rescatar sus salidas tecnicas en lugar de abortar abruptamente.
+			if fallbackSummary := summarizeExecutedTools(conversation); fallbackSummary != "" {
+				log.Printf("[Orchestrator Degradacion Elegante] Fallo llamada LLM (%v), pero existen herramientas ejecutadas con exito. Retornando reporte tecnico.", err)
+				if o.history != nil {
+					o.history.Append(sessionID, OpenAIMessage{Role: "user", Content: userInput})
+					o.history.Append(sessionID, OpenAIMessage{Role: "assistant", Content: fallbackSummary})
+				}
+				if o.onSuccess != nil {
+					o.onSuccess(sessionID)
+				}
+				return fallbackSummary, nil
+			}
 			return "", fmt.Errorf("error llamando al LLM: %w", err)
 		}
 
@@ -185,7 +206,10 @@ func (o *ReActOrchestrator) Run(ctx context.Context, sessionID, userInput, extra
 		ToolChoice: "none",
 	}
 
-	if chatResp, err := o.provider.Execute(ctx, synthReq); err == nil && len(chatResp.Choices) > 0 {
+	synthCtx, synthCancel := context.WithTimeout(context.WithoutCancel(ctx), 35*time.Second)
+	defer synthCancel()
+
+	if chatResp, err := o.provider.Execute(synthCtx, synthReq); err == nil && len(chatResp.Choices) > 0 {
 		reply := cleanFormatting(chatResp.Choices[0].Message.Content)
 		if reply != "" {
 			if o.history != nil {
@@ -199,5 +223,43 @@ func (o *ReActOrchestrator) Run(ctx context.Context, sessionID, userInput, extra
 		}
 	}
 
+	if fallbackSummary := summarizeExecutedTools(conversation); fallbackSummary != "" {
+		if o.history != nil {
+			o.history.Append(sessionID, OpenAIMessage{Role: "user", Content: userInput})
+			o.history.Append(sessionID, OpenAIMessage{Role: "assistant", Content: fallbackSummary})
+		}
+		if o.onSuccess != nil {
+			o.onSuccess(sessionID)
+		}
+		return fallbackSummary, nil
+	}
+
 	return "Solicitud procesada con exito en base a los datos del sistema.", nil
+}
+
+// summarizeExecutedTools extrae y consolida las salidas tecnicas de herramientas en caso de falla de sintesis final.
+func summarizeExecutedTools(messages []OpenAIMessage) string {
+	var toolOutputs []string
+	for _, m := range messages {
+		if m.Role == "tool" && strings.TrimSpace(m.Content) != "" {
+			toolOutputs = append(toolOutputs, strings.TrimSpace(m.Content))
+		}
+	}
+	if len(toolOutputs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("Operaciones ejecutadas en el sistema:\n\n")
+	start := 0
+	if len(toolOutputs) > 3 {
+		start = len(toolOutputs) - 3
+	}
+	for i := start; i < len(toolOutputs); i++ {
+		b.WriteString(toolOutputs[i])
+		if i < len(toolOutputs)-1 {
+			b.WriteString("\n---\n")
+		}
+	}
+	return b.String()
 }

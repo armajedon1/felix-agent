@@ -105,14 +105,42 @@ func (p *FailoverProvider) UpdateCredentials(apiBase, apiKey, model string, keys
 	}
 }
 
+func (p *FailoverProvider) resolveFallback() (base, key, model string, enabled bool) {
+	base = p.cfg.FallbackAPIBase
+	key = p.cfg.FallbackAPIKey
+	model = p.cfg.FallbackModel
+
+	if base == "" {
+		if p.cfg.GroqAPIKey != "" {
+			base = "https://api.groq.com/openai/v1"
+			key = p.cfg.GroqAPIKey
+			if model == "" {
+				model = "openai/gpt-oss-120b"
+			}
+		} else if p.cfg.OpenAIAPIKey != "" {
+			base = "https://api.openai.com/v1"
+			key = p.cfg.OpenAIAPIKey
+			if model == "" {
+				model = "gpt-4o-mini"
+			}
+		}
+	}
+	if model == "" {
+		model = "openai/gpt-oss-120b"
+	}
+	enabled = base != ""
+	return
+}
+
 func (p *FailoverProvider) Status() LLMStatus {
 	p.llmMu.RLock()
 	defer p.llmMu.RUnlock()
 	st := p.llmStatus
 	st.PrimaryEndpoint = p.cfg.APIBase
 	st.PrimaryModel = p.cfg.Model
-	st.FallbackEndpoint = p.cfg.FallbackAPIBase
-	st.FallbackModel = p.cfg.FallbackModel
+	fbBase, _, fbModel, _ := p.resolveFallback()
+	st.FallbackEndpoint = fbBase
+	st.FallbackModel = fbModel
 	return st
 }
 
@@ -132,7 +160,7 @@ func isRateLimitError(err error) bool {
 }
 
 func (p *FailoverProvider) Execute(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
-	hasFallback := p.cfg.FallbackAPIBase != ""
+	fbBase, fbKey, fbModel, hasFallback := p.resolveFallback()
 
 	// Si NO hay fallback configurado:
 	// Reintentar hasta 3 veces con espera progresiva y rotacion de claves ante 429
@@ -141,7 +169,9 @@ func (p *FailoverProvider) Execute(ctx context.Context, req ChatCompletionReques
 		var lastErr error
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			activeKey := p.getActiveKey()
-			resp, err := p.doRequest(ctx, p.cfg.APIBase, activeKey, p.cfg.Model, req)
+			attemptCtx, attemptCancel := context.WithTimeout(ctx, 25*time.Second)
+			resp, err := p.doRequest(attemptCtx, p.cfg.APIBase, activeKey, p.cfg.Model, req)
+			attemptCancel()
 			if err == nil {
 				p.recordSuccess(true, resp.Usage)
 				return resp, nil
@@ -173,39 +203,55 @@ func (p *FailoverProvider) Execute(ctx context.Context, req ChatCompletionReques
 
 	// 1. Intento con proveedor primario si no esta en cooldown
 	if !inCooldown {
-		activeKey := p.getActiveKey()
-		resp, err := p.doRequest(ctx, p.cfg.APIBase, activeKey, p.cfg.Model, req)
-		if err == nil {
-			p.recordSuccess(true, resp.Usage)
-			return resp, nil
+		primaryTimeout := 20 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			rem := time.Until(deadline)
+			if rem > 0 && rem < primaryTimeout {
+				primaryTimeout = rem
+			}
 		}
 
-		if isRateLimitError(err) && p.keyPool != nil && p.keyPool.Count() > 1 {
-			_ = p.keyPool.Rotate()
-			log.Printf("[KeyPool] Cuota agotada en primario. Rotando clave e intentando de inmediato...")
-			activeKey = p.getActiveKey()
-			resp, err = p.doRequest(ctx, p.cfg.APIBase, activeKey, p.cfg.Model, req)
+		if primaryTimeout > 2*time.Second {
+			primaryCtx, primaryCancel := context.WithTimeout(ctx, primaryTimeout)
+			activeKey := p.getActiveKey()
+			resp, err := p.doRequest(primaryCtx, p.cfg.APIBase, activeKey, p.cfg.Model, req)
+			primaryCancel()
+
 			if err == nil {
 				p.recordSuccess(true, resp.Usage)
 				return resp, nil
 			}
-		}
 
-		// Registrar falla del primario
-		p.recordFailure(err)
-		log.Printf("[LLM Failover] Falla en proveedor primario (%v). Conmutando inmediatamente a fallback...", err)
+			if isRateLimitError(err) && p.keyPool != nil && p.keyPool.Count() > 1 {
+				_ = p.keyPool.Rotate()
+				log.Printf("[KeyPool] Cuota agotada en primario. Rotando clave e intentando de inmediato...")
+				activeKey = p.getActiveKey()
+				retryCtx, retryCancel := context.WithTimeout(ctx, primaryTimeout)
+				resp, err = p.doRequest(retryCtx, p.cfg.APIBase, activeKey, p.cfg.Model, req)
+				retryCancel()
+				if err == nil {
+					p.recordSuccess(true, resp.Usage)
+					return resp, nil
+				}
+			}
+
+			// Registrar falla del primario
+			p.recordFailure(err)
+			log.Printf("[LLM Failover] Falla en proveedor primario (%v). Conmutando inmediatamente a fallback...", err)
+		} else {
+			log.Printf("[LLM Failover] Tiempo insuficiente para proveedor primario (%v). Enrutando directo a fallback...", primaryTimeout)
+		}
 	} else {
 		log.Printf("[LLM Failover] Proveedor primario en cooldown por fallas previas. Enrutando directo a fallback...")
 	}
 
-	// 2. Conmutacion automatica a proveedor de respaldo (Groq / OpenAI-compatible)
-	fallbackModel := p.cfg.FallbackModel
-	if fallbackModel == "" {
-		fallbackModel = "openai/gpt-oss-120b"
-	}
-	log.Printf("[LLM Failover] Invocando proveedor de respaldo: %s (modelo: %s)...", p.cfg.FallbackAPIBase, fallbackModel)
+	// 2. Conmutacion automatica a proveedor de respaldo (Groq / OpenAI-compatible) con Grace Period
+	log.Printf("[LLM Failover] Invocando proveedor de respaldo: %s (modelo: %s)...", fbBase, fbModel)
 
-	fallbackResp, fallbackErr := p.doRequest(ctx, p.cfg.FallbackAPIBase, p.cfg.FallbackAPIKey, fallbackModel, req)
+	fallbackCtx, fallbackCancel := context.WithTimeout(context.WithoutCancel(ctx), 35*time.Second)
+	defer fallbackCancel()
+
+	fallbackResp, fallbackErr := p.doRequest(fallbackCtx, fbBase, fbKey, fbModel, req)
 	if fallbackErr == nil {
 		p.recordSuccess(false, fallbackResp.Usage)
 		log.Println("[LLM Failover] Respuesta exitosa obtenida desde el proveedor de respaldo.")
@@ -213,7 +259,7 @@ func (p *FailoverProvider) Execute(ctx context.Context, req ChatCompletionReques
 	}
 
 	log.Printf("[LLM Failover Error] Tambien fallo el proveedor de respaldo: %v", fallbackErr)
-	return nil, fmt.Errorf("fallaron ambos proveedores de LLM (primario: %s, fallback: %s): %w", p.cfg.APIBase, p.cfg.FallbackAPIBase, fallbackErr)
+	return nil, fmt.Errorf("fallaron ambos proveedores de LLM (primario: %s, fallback: %s): %w", p.cfg.APIBase, fbBase, fallbackErr)
 }
 
 func (p *FailoverProvider) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
@@ -273,7 +319,7 @@ func (p *FailoverProvider) recordFailure(err error) {
 	p.llmStatus.LastError = err.Error()
 	p.llmStatus.PrimaryHealthy = false
 
-	hasFallback := p.cfg.FallbackAPIBase != ""
+	_, _, _, hasFallback := p.resolveFallback()
 	if hasFallback {
 		p.llmStatus.FallbackActive = true
 		if p.llmStatus.ConsecutiveFailures >= 2 {
