@@ -442,10 +442,18 @@ func pruneRequestForFallback(req ChatCompletionRequest) ChatCompletionRequest {
 		if len(content) > maxMsgChars {
 			content = content[:maxMsgChars] + "\n... [salida truncada para contingencia]"
 		}
+
+		var safeToolCalls []ToolCall
+		for _, tc := range m.ToolCalls {
+			if tc.Function.Name != "" {
+				safeToolCalls = append(safeToolCalls, tc)
+			}
+		}
+
 		newMsgs[i] = OpenAIMessage{
 			Role:       m.Role,
 			Content:    content,
-			ToolCalls:  m.ToolCalls,
+			ToolCalls:  safeToolCalls,
 			ToolCallID: m.ToolCallID,
 		}
 	}
@@ -469,6 +477,11 @@ func pruneRequestForFallback(req ChatCompletionRequest) ChatCompletionRequest {
 			compactMsgs = append(compactMsgs, newMsgs[startIdx:]...)
 		}
 		newMsgs = compactMsgs
+	}
+
+	// Poda de esquemas de herramientas para no desbordar el TPM del fallback
+	if len(pruned.Tools) > 4 {
+		pruned.Tools = pruned.Tools[:4]
 	}
 
 	pruned.Messages = newMsgs
