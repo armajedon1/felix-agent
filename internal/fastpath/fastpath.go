@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,12 +80,35 @@ func (r *Router) Route(rawText string, isAdmin bool) (bool, string) {
 			return true, fmt.Sprintf("*CONTENEDORES DOCKER (Fast-Path)*\n```\n%s```", strings.TrimSpace(string(out)))
 
 		case "memoria", "ram", "memoria ram":
-			cmd := exec.Command("free", "-h")
+			cmd := exec.Command("free", "-m")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return true, fmt.Sprintf("Error consultando memoria: %v", err)
 			}
-			return true, fmt.Sprintf("*MEMORIA DEL SERVIDOR (Fast-Path)*\n```\n%s```", strings.TrimSpace(string(out)))
+			lines := strings.Split(string(out), "\n")
+			var memInfo string
+			for _, line := range lines {
+				if strings.HasPrefix(line, "Mem:") {
+					f := strings.Fields(line)
+					if len(f) >= 7 {
+						totalMB, _ := strconv.Atoi(f[1])
+						usedMB, _ := strconv.Atoi(f[2])
+						availMB, _ := strconv.Atoi(f[6])
+						pct := 0
+						if totalMB > 0 {
+							pct = int(float64(usedMB) / float64(totalMB) * 100)
+						}
+						totalGB := float64(totalMB) / 1024.0
+						usedGB := float64(usedMB) / 1024.0
+						memInfo = fmt.Sprintf("*MEMORIA DEL SERVIDOR (Fast-Path)*\n- En uso: %d MB (%.1f GB) de %d MB (%.1f GB) [%d%%]\n- Disponible: %d MB\n```\n%s```", usedMB, usedGB, totalMB, totalGB, pct, availMB, strings.TrimSpace(string(out)))
+					}
+					break
+				}
+			}
+			if memInfo == "" {
+				memInfo = fmt.Sprintf("*MEMORIA DEL SERVIDOR (Fast-Path)*\n```\n%s```", strings.TrimSpace(string(out)))
+			}
+			return true, memInfo
 
 		case "espacio", "disco", "almacenamiento":
 			cmd := exec.Command("df", "-h", "/")

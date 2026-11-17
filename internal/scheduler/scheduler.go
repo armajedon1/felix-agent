@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -450,16 +451,37 @@ func (s *Scheduler) StartRunner(ctx context.Context, sendFn func(chatJID, messag
 			if out, err := exec.Command("uptime", "-p").Output(); err == nil {
 				sb.WriteString(fmt.Sprintf("- Uptime: %s\n", strings.TrimSpace(string(out))))
 			}
-			if out, err := exec.Command("free", "-h").Output(); err == nil {
+			if out, err := exec.Command("free", "-m").Output(); err == nil {
 				lines := strings.Split(string(out), "\n")
-				if len(lines) > 1 {
-					sb.WriteString(fmt.Sprintf("- Memoria: %s\n", lines[1]))
+				for _, line := range lines {
+					if strings.HasPrefix(line, "Mem:") {
+						f := strings.Fields(line)
+						if len(f) >= 7 {
+							totalMB, _ := strconv.Atoi(f[1])
+							usedMB, _ := strconv.Atoi(f[2])
+							availMB, _ := strconv.Atoi(f[6])
+							pct := 0
+							if totalMB > 0 {
+								pct = int(float64(usedMB) / float64(totalMB) * 100)
+							}
+							totalGB := float64(totalMB) / 1024.0
+							usedGB := float64(usedMB) / 1024.0
+							sb.WriteString(fmt.Sprintf("- Memoria: %d MB / %d MB (%.1f GB / %.1f GB, %d%% en uso, %d MB disponibles)\n", usedMB, totalMB, usedGB, totalGB, pct, availMB))
+						}
+						break
+					}
 				}
 			}
 			if out, err := exec.Command("df", "-h", "/").Output(); err == nil {
 				lines := strings.Split(string(out), "\n")
-				if len(lines) > 1 {
-					sb.WriteString(fmt.Sprintf("- Almacenamiento (/): %s\n", lines[1]))
+				for _, line := range lines {
+					if strings.HasPrefix(line, "/dev/") || strings.Contains(line, "/") {
+						f := strings.Fields(line)
+						if len(f) >= 5 && f[0] != "Filesystem" {
+							sb.WriteString(fmt.Sprintf("- Almacenamiento (/): %s usados de %s (%s disponibles, %s en uso)\n", f[2], f[1], f[3], f[4]))
+							break
+						}
+					}
 				}
 			}
 			text = strings.TrimSpace(sb.String())
@@ -596,11 +618,20 @@ func (s *Scheduler) StartRunner(ctx context.Context, sendFn func(chatJID, messag
 				}
 
 				for _, rem := range pending {
-					if err := sendFn(rem.ChatJID, rem.Message); err != nil {
-						log.Printf("[Scheduler Error] Fallo al despachar recordatorio a %s: %v", rem.ChatJID, err)
+					targetJID := rem.ChatJID
+					if targetJID == "direct" || targetJID == "" {
+						targetJID = ownerJID
+					}
+					if targetJID == "" || targetJID == "direct" {
+						log.Printf("[Scheduler Warning] Recordatorio #%d omitido por destino no resolvible (%s)", rem.ID, rem.ChatJID)
+						_ = s.MarkSent(rem.ID)
 						continue
 					}
-					log.Printf("[Recordatorio Despachado Autonomamente] A %s (%s) | Mensaje: %s", rem.TargetName, rem.ChatJID, rem.Message)
+					if err := sendFn(targetJID, rem.Message); err != nil {
+						log.Printf("[Scheduler Error] Fallo al despachar recordatorio a %s: %v", targetJID, err)
+						continue
+					}
+					log.Printf("[Recordatorio Despachado Autonomamente] A %s (%s) | Mensaje: %s", rem.TargetName, targetJID, rem.Message)
 					_ = s.MarkSent(rem.ID)
 				}
 			}
