@@ -203,13 +203,13 @@ func (p *FailoverProvider) Execute(ctx context.Context, req ChatCompletionReques
 
 	// 1. Intento con proveedor primario si no esta en cooldown
 	if !inCooldown {
-		primaryTimeout := 45 * time.Second
+		primaryTimeout := 90 * time.Second
 		if deadline, ok := ctx.Deadline(); ok {
 			rem := time.Until(deadline)
 			if rem > 0 {
-				if rem > 15*time.Second {
-					if rem-15*time.Second < primaryTimeout {
-						primaryTimeout = rem - 15*time.Second
+				if rem > 20*time.Second {
+					if rem-20*time.Second < primaryTimeout {
+						primaryTimeout = rem - 20*time.Second
 					}
 				} else {
 					primaryTimeout = rem
@@ -433,12 +433,11 @@ func pruneRequestForFallback(req ChatCompletionRequest) ChatCompletionRequest {
 	}
 
 	newMsgs := make([]OpenAIMessage, len(req.Messages))
-	totalChars := 0
 	for i, m := range req.Messages {
 		content := m.Content
-		maxMsgChars := 1500
+		maxMsgChars := 800
 		if m.Role == "system" && i == 0 {
-			maxMsgChars = 3500
+			maxMsgChars = 1800
 		}
 		if len(content) > maxMsgChars {
 			content = content[:maxMsgChars] + "\n... [salida truncada para contingencia]"
@@ -449,10 +448,11 @@ func pruneRequestForFallback(req ChatCompletionRequest) ChatCompletionRequest {
 			ToolCalls:  m.ToolCalls,
 			ToolCallID: m.ToolCallID,
 		}
-		totalChars += len(content)
 	}
 
-	if totalChars > 14000 && len(newMsgs) > 3 {
+	// Para proveedores de respaldo con cuotas estrictas de TPM (como Groq),
+	// retener unicamente System Prompt + Resumen (si existe) + ultimos 3 mensajes
+	if len(newMsgs) > 3 {
 		var compactMsgs []OpenAIMessage
 		compactMsgs = append(compactMsgs, newMsgs[0])
 
@@ -462,8 +462,9 @@ func pruneRequestForFallback(req ChatCompletionRequest) ChatCompletionRequest {
 			startIdx = 2
 		}
 
-		if len(newMsgs)-startIdx > 4 {
-			compactMsgs = append(compactMsgs, newMsgs[len(newMsgs)-4:]...)
+		tailCount := 3
+		if len(newMsgs)-startIdx > tailCount {
+			compactMsgs = append(compactMsgs, newMsgs[len(newMsgs)-tailCount:]...)
 		} else {
 			compactMsgs = append(compactMsgs, newMsgs[startIdx:]...)
 		}

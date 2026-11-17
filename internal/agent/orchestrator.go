@@ -150,9 +150,13 @@ func (o *ReActOrchestrator) Run(ctx context.Context, sessionID, userInput, extra
 			}
 
 			for i, tc := range assistantMsg.ToolCalls {
+				output := outputs[i]
+				if len(output) > 3000 {
+					output = output[:3000] + "\n... [salida truncada en memoria de trabajo]"
+				}
 				conversation = append(conversation, OpenAIMessage{
 					Role:       "tool",
-					Content:    outputs[i],
+					Content:    output,
 					ToolCallID: tc.ID,
 				})
 			}
