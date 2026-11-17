@@ -110,9 +110,9 @@ func (o *ReActOrchestrator) Run(ctx context.Context, sessionID, userInput, extra
 
 		// Otorgar presupuesto de tiempo garantizado (Grace Period) para la inferencia
 		execCtx := ctx
-		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 20*time.Second {
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 30*time.Second {
 			var cancel context.CancelFunc
-			execCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 35*time.Second)
+			execCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
 			defer cancel()
 		}
 
@@ -239,25 +239,45 @@ func (o *ReActOrchestrator) Run(ctx context.Context, sessionID, userInput, extra
 
 // summarizeExecutedTools extrae y consolida las salidas tecnicas de herramientas en caso de falla de sintesis final.
 func summarizeExecutedTools(messages []OpenAIMessage) string {
-	var toolOutputs []string
+	var relevantOutputs []string
 	for _, m := range messages {
-		if m.Role == "tool" && strings.TrimSpace(m.Content) != "" {
-			toolOutputs = append(toolOutputs, strings.TrimSpace(m.Content))
+		if m.Role != "tool" {
+			continue
 		}
+		raw := strings.TrimSpace(m.Content)
+		if raw == "" || raw == "OK" || raw == "(comando ejecutado sin salida)" || raw == "true" {
+			continue
+		}
+		// Truncar salidas extensas para no inundar el canal ni envenenar el historial
+		if len(raw) > 250 {
+			raw = raw[:250] + "... [salida truncada]"
+		}
+		relevantOutputs = append(relevantOutputs, raw)
 	}
-	if len(toolOutputs) == 0 {
+
+	if len(relevantOutputs) == 0 {
+		hasTools := false
+		for _, m := range messages {
+			if m.Role == "tool" {
+				hasTools = true
+				break
+			}
+		}
+		if hasTools {
+			return "Operaciones tecnicas ejecutadas en el sistema. Aguardando siguiente instruccion."
+		}
 		return ""
 	}
 
 	var b strings.Builder
-	b.WriteString("Operaciones ejecutadas en el sistema:\n\n")
+	b.WriteString("Operaciones tecnicas ejecutadas:\n\n")
 	start := 0
-	if len(toolOutputs) > 3 {
-		start = len(toolOutputs) - 3
+	if len(relevantOutputs) > 3 {
+		start = len(relevantOutputs) - 3
 	}
-	for i := start; i < len(toolOutputs); i++ {
-		b.WriteString(toolOutputs[i])
-		if i < len(toolOutputs)-1 {
+	for i := start; i < len(relevantOutputs); i++ {
+		b.WriteString(relevantOutputs[i])
+		if i < len(relevantOutputs)-1 {
 			b.WriteString("\n---\n")
 		}
 	}

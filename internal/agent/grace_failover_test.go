@@ -96,3 +96,23 @@ func TestSummarizeExecutedTools(t *testing.T) {
 		t.Fatalf("summarizeExecutedTools no rescato la salida de la tool: %s", summary)
 	}
 }
+
+func TestPruneRequestForFallback(t *testing.T) {
+	hugeContent := strings.Repeat("A", 10000)
+	req := ChatCompletionRequest{
+		Model: "test-model",
+		Messages: []OpenAIMessage{
+			{Role: "system", Content: "Eres un asistente."},
+			{Role: "user", Content: "Lee este archivo."},
+			{Role: "tool", Content: hugeContent, ToolCallID: "call_1"},
+		},
+	}
+
+	pruned := pruneRequestForFallback(req)
+	if len(pruned.Messages[2].Content) > 2000 {
+		t.Fatalf("La herramienta no fue truncada correctamente: longitud %d", len(pruned.Messages[2].Content))
+	}
+	if !strings.Contains(pruned.Messages[2].Content, "[salida truncada para contingencia]") {
+		t.Fatalf("No contiene la marca de truncamiento: %s", pruned.Messages[2].Content)
+	}
+}
