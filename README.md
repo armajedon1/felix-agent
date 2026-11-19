@@ -143,6 +143,46 @@ Los comandos directos son procesados por el enrutador rápido con respuesta inst
 
 ---
 
+## Modo Consola y Administracion CLI (`felix <subcomando>`)
+
+Felix incluye una interfaz de linea de comandos (CLI) nativa para administracion, diagnostico y operacion directa desde la terminal:
+
+```bash
+# Estado en tiempo real, canales, inferencia LLM y metricas
+felix status
+
+# Inspeccion y seguimiento en vivo de logs (tail -f)
+felix logs -n 50 -f
+
+# Listar sesiones de conversacion almacenadas en SQLite
+felix conv list
+
+# Leer el historial completo de una conversacion
+felix conv show 5491153402646 -n 30
+
+# Buscar mensajes especificos en todas las conversaciones
+felix conv search "presupuesto"
+
+# Consultar o modificar parametros de configuracion de forma atomica
+felix config get model
+felix config set model gemini-2.5-flash
+
+# Motor de bots: listar, inspeccionar, replicar, chatear y exportar
+felix bots list
+felix bots show pizzeria-napoli
+felix bots create --template pizzeria --id pizzeria-roma --name "Pizzeria Roma"
+felix bots replicate mosiah-community mosiah-varela --name "MosIAh Varela"
+felix bots chat pizzeria-napoli
+felix bots orders pizzeria-napoli
+felix bots appointments peluqueria-estilo
+felix bots export pizzeria-napoli /opt/pizzeria-bot
+
+# Consola interactiva REPL de Felix por terminal o ejecucion directa
+felix chat "Verifica el consumo de disco y memoria"
+```
+
+---
+
 ## Estructura de Directorios
 
 ```text

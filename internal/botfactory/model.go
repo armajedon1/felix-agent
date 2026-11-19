@@ -37,20 +37,33 @@ type BusinessHours struct {
 }
 
 type BotSpec struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	Type            BotType        `json:"type"`
-	Description     string         `json:"description"`
-	SystemPrompt    string         `json:"system_prompt"`
-	Catalog         []CatalogItem  `json:"catalog,omitempty"`
-	FAQ             []FAQItem      `json:"faq,omitempty"`
-	BusinessHours   *BusinessHours `json:"business_hours,omitempty"`
-	RequiredSlots   []string       `json:"required_slots,omitempty"`
-	StrictGrounding bool           `json:"strict_grounding"`
-	FallbackMessage string         `json:"fallback_message,omitempty"`
-	Status          string         `json:"status"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Nicknames         []string          `json:"nicknames,omitempty"`
+	Type              BotType           `json:"type"`
+	Description       string            `json:"description"`
+	Personality       string            `json:"personality,omitempty"`
+	SystemPrompt      string            `json:"system_prompt"`
+	Catalog           []CatalogItem     `json:"catalog,omitempty"`
+	FAQ               []FAQItem         `json:"faq,omitempty"`
+	BusinessHours     *BusinessHours    `json:"business_hours,omitempty"`
+	RequiredSlots     []string          `json:"required_slots,omitempty"`
+	StrictGrounding   bool              `json:"strict_grounding"`
+	FallbackMessage   string            `json:"fallback_message,omitempty"`
+	AllowedUsers      []string          `json:"allowed_users,omitempty"`
+	AllowedGroups     []string          `json:"allowed_groups,omitempty"`
+	AllowGroups       bool              `json:"allow_groups,omitempty"`
+	AllowAllUsers     bool              `json:"allow_all_users,omitempty"`
+	GroupAliases      map[string]string `json:"group_aliases,omitempty"`
+	Model             string            `json:"model,omitempty"`
+	APIBase           string            `json:"api_base,omitempty"`
+	APIKey            string            `json:"api_key,omitempty"`
+	Port              int               `json:"port,omitempty"`
+	WebhookURL        string            `json:"webhook_url,omitempty"`
+	ReplicationSource string            `json:"replication_source,omitempty"`
+	Status            string            `json:"status"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
 type OrderItem struct {

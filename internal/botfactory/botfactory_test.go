@@ -199,6 +199,47 @@ func TestTemplateCreation(t *testing.T) {
 	if specFaq.Type != TypeFAQSupport {
 		t.Errorf("tipo de bot incorrecto para faq")
 	}
+
+	specMosiah, err := mgr.CreateFromTemplate("mosiah", "mosiah-replica", "Mosiah Barrio Varela", nil)
+	if err != nil {
+		t.Fatalf("error creando plantilla mosiah: %v", err)
+	}
+	if specMosiah.Name != "Mosiah Barrio Varela" || len(specMosiah.Nicknames) == 0 {
+		t.Errorf("error en plantilla mosiah")
+	}
+}
+
+func TestReplicateBot(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "bots_replicate_test.db")
+
+	store, err := NewStorage(dbPath)
+	if err != nil {
+		t.Fatalf("error creando storage: %v", err)
+	}
+	defer store.Close()
+
+	mgr := NewManager(store, &mockCompleter{response: "ok"})
+
+	piz := TemplatePizzeria()
+	if err := store.SaveBot(piz); err != nil {
+		t.Fatalf("error guardando bot origen: %v", err)
+	}
+
+	replica, err := mgr.ReplicateBot(piz.ID, "pizzeria-roma", "Pizzeria Roma", map[string]any{
+		"description": "Replica para sucursal Roma",
+	})
+	if err != nil {
+		t.Fatalf("error replicando bot: %v", err)
+	}
+
+	if replica.ID != "pizzeria-roma" || replica.Name != "Pizzeria Roma" || replica.ReplicationSource != piz.ID {
+		t.Errorf("datos de replica no coinciden: %+v", replica)
+	}
+
+	if replica.Description != "Replica para sucursal Roma" {
+		t.Errorf("override no aplicado: %s", replica.Description)
+	}
 }
 
 func TestExportStandalone(t *testing.T) {

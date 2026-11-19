@@ -484,6 +484,32 @@ func (s *Server) handleBotRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(res)
 
+	case "replicate":
+		if r.Method != http.MethodPost {
+			http.Error(w, "Metodo no permitido (usar POST)", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			TargetID  string         `json:"target_id"`
+			Name      string         `json:"name"`
+			Overrides map[string]any `json:"overrides"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "JSON invalido", http.StatusBadRequest)
+			return
+		}
+		if req.TargetID == "" {
+			http.Error(w, "Campo 'target_id' obligatorio", http.StatusBadRequest)
+			return
+		}
+		replica, err := s.botMgr.ReplicateBot(botID, req.TargetID, req.Name, req.Overrides)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(replica)
+
 	case "orders":
 		if r.Method != http.MethodGet {
 			http.Error(w, "Metodo no permitido (usar GET)", http.StatusMethodNotAllowed)

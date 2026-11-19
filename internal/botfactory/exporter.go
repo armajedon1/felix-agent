@@ -20,6 +20,51 @@ func ExportStandalone(spec *BotSpec, targetDir string) error {
 		return fmt.Errorf("error escribiendo spec.json: %w", err)
 	}
 
+	configData := map[string]any{
+		"name":            spec.Name,
+		"nicknames":       spec.Nicknames,
+		"type":            spec.Type,
+		"description":     spec.Description,
+		"personality":     spec.Personality,
+		"system_prompt":   spec.SystemPrompt,
+		"allowed_users":   spec.AllowedUsers,
+		"allowed_groups":  spec.AllowedGroups,
+		"allow_groups":    spec.AllowGroups,
+		"allow_all_users": spec.AllowAllUsers,
+		"api_base":        spec.APIBase,
+		"model":           spec.Model,
+	}
+	if configData["api_base"] == "" {
+		configData["api_base"] = "http://127.0.0.1:8045/v1"
+	}
+	if configData["model"] == "" {
+		configData["model"] = "gemini-2.5-flash"
+	}
+	configRaw, _ := json.MarshalIndent(configData, "", "  ")
+	_ = os.WriteFile(filepath.Join(targetDir, "config.json"), configRaw, 0644)
+
+	port := 8080
+	if spec.Port > 0 {
+		port = spec.Port
+	}
+
+	ecosystemContent := fmt.Sprintf(`module.exports = {
+  apps: [{
+    name: '%s',
+    script: './bot',
+    cwd: __dirname,
+    autorestart: true,
+    max_memory_restart: '300M',
+    env: {
+      PORT: '%d',
+      LLM_API_BASE: 'http://127.0.0.1:8045/v1',
+      LLM_MODEL: 'gemini-2.5-flash'
+    }
+  }]
+};
+`, sanitizeModuleName(spec.ID), port)
+	_ = os.WriteFile(filepath.Join(targetDir, "ecosystem.config.cjs"), []byte(ecosystemContent), 0644)
+
 	goModContent := fmt.Sprintf(`module %s
 
 go 1.22

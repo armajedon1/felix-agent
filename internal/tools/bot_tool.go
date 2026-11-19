@@ -27,17 +27,21 @@ func (t *BotFactoryTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"enum":        []string{"create", "create_from_template", "list", "get", "chat", "get_records", "export", "delete"},
+				"enum":        []string{"create", "create_from_template", "replicate", "list", "get", "chat", "get_records", "export", "delete"},
 				"description": "Accion a realizar en el motor de bots.",
 			},
 			"template": map[string]any{
 				"type":        "string",
-				"enum":        []string{"pizzeria", "turnos", "llamadas", "faq_soporte"},
+				"enum":        []string{"pizzeria", "turnos", "llamadas", "faq_soporte", "mosiah"},
 				"description": "Plantilla base para create_from_template.",
 			},
 			"bot_id": map[string]any{
 				"type":        "string",
 				"description": "Identificador unico en formato slug (ej. 'pizzeria-napoli', 'clinica-dental').",
+			},
+			"target_id": map[string]any{
+				"type":        "string",
+				"description": "Identificador destino para la accion 'replicate'.",
 			},
 			"name": map[string]any{
 				"type":        "string",
@@ -73,6 +77,7 @@ type botToolInput struct {
 	Action     string `json:"action"`
 	Template   string `json:"template"`
 	BotID      string `json:"bot_id"`
+	TargetID   string `json:"target_id"`
 	Name       string `json:"name"`
 	SpecJSON   string `json:"spec_json"`
 	Message    string `json:"message"`
@@ -117,13 +122,27 @@ func (t *BotFactoryTool) Execute(ctx context.Context, args json.RawMessage) (str
 
 	case "create_from_template":
 		if in.Template == "" {
-			return "", fmt.Errorf("debes especificar 'template' (pizzeria, turnos, llamadas, faq_soporte)")
+			return "", fmt.Errorf("debes especificar 'template' (pizzeria, turnos, llamadas, faq_soporte, mosiah)")
 		}
 		spec, err := t.Manager.CreateFromTemplate(in.Template, in.BotID, in.Name, nil)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Bot '%s' (ID: %s, Tipo: %s) creado exitosamente desde plantilla '%s'.", spec.Name, spec.ID, spec.Type, in.Template), nil
+
+	case "replicate":
+		if in.BotID == "" {
+			return "", fmt.Errorf("debes indicar 'bot_id' origen a replicar")
+		}
+		targetID := in.TargetID
+		if targetID == "" {
+			return "", fmt.Errorf("debes indicar 'target_id' para el nuevo bot replicado")
+		}
+		replica, err := t.Manager.ReplicateBot(in.BotID, targetID, in.Name, nil)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Bot '%s' (ID: %s) replicado exitosamente a partir de '%s'.", replica.Name, replica.ID, in.BotID), nil
 
 	case "create":
 		if in.SpecJSON == "" {

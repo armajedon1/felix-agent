@@ -61,8 +61,10 @@ func (m *Manager) CreateFromTemplate(templateName, customID, customName string, 
 		spec = TemplateCallScheduler()
 	case "faq", "faq_soporte", "soporte", "atencion":
 		spec = TemplateFAQSupport()
+	case "mosiah", "comunidad", "asistente":
+		spec = TemplateMosiah()
 	default:
-		return nil, fmt.Errorf("plantilla '%s' no reconocida. Opciones disponibles: pizzeria, turnos, llamadas, faq_soporte", templateName)
+		return nil, fmt.Errorf("plantilla '%s' no reconocida. Opciones disponibles: pizzeria, turnos, llamadas, faq_soporte, mosiah", templateName)
 	}
 
 	if customID != "" {
@@ -83,6 +85,52 @@ func (m *Manager) CreateFromTemplate(templateName, customID, customName string, 
 	}
 
 	return spec, nil
+}
+
+func (m *Manager) ReplicateBot(sourceID, newID, newName string, overrides map[string]any) (*BotSpec, error) {
+	if newID == "" {
+		return nil, fmt.Errorf("debes especificar un nuevo ID para la replica")
+	}
+
+	source, err := m.storage.GetBot(sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("bot origen '%s' no encontrado: %w", sourceID, err)
+	}
+
+	clone := *source
+	clone.ID = newID
+	if newName != "" {
+		clone.Name = newName
+	} else {
+		clone.Name = source.Name + " (Replica)"
+	}
+	clone.ReplicationSource = sourceID
+	clone.CreatedAt = time.Now().UTC()
+	clone.UpdatedAt = time.Now().UTC()
+
+	if overrides != nil {
+		if desc, ok := overrides["description"].(string); ok && desc != "" {
+			clone.Description = desc
+		}
+		if pers, ok := overrides["personality"].(string); ok && pers != "" {
+			clone.Personality = pers
+		}
+		if prompt, ok := overrides["system_prompt"].(string); ok && prompt != "" {
+			clone.SystemPrompt = prompt
+		}
+		if model, ok := overrides["model"].(string); ok && model != "" {
+			clone.Model = model
+		}
+		if port, ok := overrides["port"].(float64); ok && port > 0 {
+			clone.Port = int(port)
+		}
+	}
+
+	if err := m.storage.SaveBot(&clone); err != nil {
+		return nil, fmt.Errorf("error guardando replica: %w", err)
+	}
+
+	return &clone, nil
 }
 
 func (m *Manager) GetBot(id string) (*BotSpec, error) {

@@ -22,6 +22,7 @@ import (
 	tgChan "felix-go/internal/channel/telegram"
 	waChan "felix-go/internal/channel/whatsapp"
 	"felix-go/internal/checkpoint"
+	"felix-go/internal/cli"
 	"felix-go/internal/config"
 	"felix-go/internal/digest"
 	"felix-go/internal/fastpath"
@@ -133,6 +134,18 @@ func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "init") {
 		runSetupWizard("config.json")
 		return
+	}
+
+	// Modo CLI nativo: status, logs, conv, config, bots, chat, version, help
+	if len(os.Args) > 1 && cli.IsCLICommand(os.Args[1]) {
+		cfgPath := "config.json"
+		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+			systemPath := "/home/matias/felix-go/config.json"
+			if _, sErr := os.Stat(systemPath); sErr == nil {
+				cfgPath = systemPath
+			}
+		}
+		os.Exit(cli.RunCLI(os.Args[1:], cfgPath))
 	}
 
 	configPath := flag.String("config", "config.json", "Ruta al archivo config.json")
