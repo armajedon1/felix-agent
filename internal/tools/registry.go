@@ -85,6 +85,7 @@ var adminOnlyTools = map[string]bool{
 	"apply_patch":       true,
 	"process":           true,
 	"harness_develop":   true,
+	"bot_factory":       true,
 }
 
 // GetOpenAISchemas genera la lista de definiciones de herramientas para enviar al LLM.

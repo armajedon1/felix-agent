@@ -75,6 +75,7 @@ var toolCategoryMap = map[string]ToolCategory{
 	"sqlite_inspector":  CatAdmin,
 	"gcli":              CatAdmin,
 	"scratchpad":        CatAdmin,
+	"bot_factory":       CatAdmin,
 }
 
 var categoryKeywords = map[ToolCategory][]string{
@@ -103,6 +104,7 @@ var categoryKeywords = map[ToolCategory][]string{
 		"recordar", "recordatorio", "aviso", "avisar", "alarma", "cron", "usuario", "contacto",
 		"rol", "veto", "confidencial", "subagente", "background", "tarea", "sqlite",
 		"base de datos", "tabla", "gcli", "drive", "gmail", "calendar", "scratchpad",
+		"bot", "bots", "pizzeria", "turno", "turnos", "agenda", "agendar", "faq", "atender", "cliente", "pedidos", "comercio",
 	},
 }
 

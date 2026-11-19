@@ -17,6 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"felix-go/internal/agent"
+	"felix-go/internal/botfactory"
 	"felix-go/internal/channel"
 	tgChan "felix-go/internal/channel/telegram"
 	waChan "felix-go/internal/channel/whatsapp"
@@ -248,6 +249,19 @@ func main() {
 		CheckpointStore: ckptStore,
 	})
 
+	// Inicializar Motor Nativo de Bots Comerciales y Especializados (Bot Factory)
+	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
+	botStore, err := botfactory.NewStorage(botsDBPath)
+	var botMgr *botfactory.Manager
+	if err != nil {
+		log.Printf("[Aviso] No se pudo inicializar storage de botfactory: %v", err)
+	} else {
+		defer botStore.Close()
+		botMgr = botfactory.NewManager(botStore, engine)
+		reg.Register(&tools.BotFactoryTool{Manager: botMgr})
+		log.Printf("Motor de Bot Factory inicializado en %s", botsDBPath)
+	}
+
 	// Inicializar Monitor de Telemetria Asincrono y Digest Precomputado
 	digestWatcher := digest.NewWatcher(2 * time.Minute)
 	digestCtx, digestCancel := context.WithCancel(context.Background())
@@ -435,6 +449,9 @@ func main() {
 
 	// Servidor HTTP interno de salud, metricas, gateway de inferencia y webhooks
 	healthServer := health.NewServer("0.0.0.0:"+cfg.HealthPort, engine, waClient, memStore, subagentMgr)
+	if botMgr != nil {
+		healthServer.SetBotManager(botMgr)
+	}
 	healthServer.SetChannelManager(chanManager)
 	gw := inference.NewGateway(cfg.APIBase, cfg.Model, engine.GetKeyPool())
 	healthServer.SetGateway(gw)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"felix-go/internal/agent"
+	"felix-go/internal/botfactory"
 	"felix-go/internal/channel"
 	"felix-go/internal/inference"
 	"felix-go/internal/memory"
@@ -26,6 +27,7 @@ type Server struct {
 	chanMgr     *channel.Manager
 	memStore    *memory.Store
 	subagentMgr *agent.SubagentManager
+	botMgr      *botfactory.Manager
 	gateway     *inference.Gateway
 	startTime   time.Time
 }
@@ -66,6 +68,8 @@ func NewServer(addr string, eng *agent.Engine, wa *whatsapp.Client, mem *memory.
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/notify", s.handleNotify)
+	mux.HandleFunc("/api/bots", s.handleBots)
+	mux.HandleFunc("/api/bots/", s.handleBotRoutes)
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		if s.gateway != nil {
 			s.gateway.HandleChatCompletions(w, r)
@@ -326,4 +330,216 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 		"target":    targetJID,
 		"timestamp": time.Now().Format("2006-01-02 15:04:05"),
 	})
+}
+
+// SetBotManager enlaza el gestor de bots nativo.
+func (s *Server) SetBotManager(bm *botfactory.Manager) {
+	s.botMgr = bm
+}
+
+func (s *Server) handleBots(w http.ResponseWriter, r *http.Request) {
+	if s.botMgr == nil {
+		http.Error(w, "Bot Manager no disponible", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		bots, err := s.botMgr.ListBots()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var list []map[string]any
+		for _, b := range bots {
+			stats, _ := s.botMgr.Storage().GetStats(b.ID)
+			list = append(list, map[string]any{
+				"id":          b.ID,
+				"name":        b.Name,
+				"type":        b.Type,
+				"description": b.Description,
+				"status":      b.Status,
+				"stats":       stats,
+			})
+		}
+		_ = json.NewEncoder(w).Encode(list)
+
+	case http.MethodPost:
+		var req struct {
+			Template string              `json:"template"`
+			BotID    string              `json:"bot_id"`
+			Name     string              `json:"name"`
+			Spec     *botfactory.BotSpec `json:"spec"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "JSON invalido", http.StatusBadRequest)
+			return
+		}
+
+		if req.Template != "" {
+			spec, err := s.botMgr.CreateFromTemplate(req.Template, req.BotID, req.Name, nil)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(spec)
+			return
+		}
+
+		if req.Spec != nil {
+			if req.BotID != "" {
+				req.Spec.ID = req.BotID
+			}
+			if req.Name != "" {
+				req.Spec.Name = req.Name
+			}
+			if err := s.botMgr.CreateBot(req.Spec); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(req.Spec)
+			return
+		}
+
+		http.Error(w, "Debes proporcionar 'template' o 'spec'", http.StatusBadRequest)
+
+	default:
+		http.Error(w, "Metodo no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleBotRoutes(w http.ResponseWriter, r *http.Request) {
+	if s.botMgr == nil {
+		http.Error(w, "Bot Manager no disponible", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	subPath := strings.TrimPrefix(r.URL.Path, "/api/bots/")
+	parts := strings.Split(strings.Trim(subPath, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "ID de bot requerido", http.StatusBadRequest)
+		return
+	}
+
+	botID := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+
+	switch action {
+	case "":
+		switch r.Method {
+		case http.MethodGet:
+			spec, err := s.botMgr.GetBot(botID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			stats, _ := s.botMgr.Storage().GetStats(botID)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"spec":  spec,
+				"stats": stats,
+			})
+		case http.MethodDelete:
+			if err := s.botMgr.DeleteBot(botID); err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": botID})
+		default:
+			http.Error(w, "Metodo no permitido", http.StatusMethodNotAllowed)
+		}
+
+	case "chat":
+		if r.Method != http.MethodPost {
+			http.Error(w, "Metodo no permitido (usar POST)", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			SessionID string `json:"session_id"`
+			Message   string `json:"message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "JSON invalido", http.StatusBadRequest)
+			return
+		}
+		if req.Message == "" {
+			http.Error(w, "Campo 'message' obligatorio", http.StatusBadRequest)
+			return
+		}
+		if req.SessionID == "" {
+			req.SessionID = "api-session"
+		}
+		res, err := s.botMgr.Chat(r.Context(), botID, req.SessionID, req.Message)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(res)
+
+	case "orders":
+		if r.Method != http.MethodGet {
+			http.Error(w, "Metodo no permitido (usar GET)", http.StatusMethodNotAllowed)
+			return
+		}
+		orders, err := s.botMgr.Storage().ListOrders(botID, 50)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(orders)
+
+	case "appointments":
+		if r.Method != http.MethodGet {
+			http.Error(w, "Metodo no permitido (usar GET)", http.StatusMethodNotAllowed)
+			return
+		}
+		apps, err := s.botMgr.Storage().ListAppointments(botID, 50)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(apps)
+
+	case "export":
+		if r.Method != http.MethodPost {
+			http.Error(w, "Metodo no permitido (usar POST)", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ExportDir string `json:"export_dir"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "JSON invalido", http.StatusBadRequest)
+			return
+		}
+		if req.ExportDir == "" {
+			http.Error(w, "Campo 'export_dir' obligatorio", http.StatusBadRequest)
+			return
+		}
+		spec, err := s.botMgr.GetBot(botID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if err := botfactory.ExportStandalone(spec, req.ExportDir); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status":     "exported",
+			"bot_id":     botID,
+			"export_dir": req.ExportDir,
+		})
+
+	default:
+		http.Error(w, "Ruta no encontrada", http.StatusNotFound)
+	}
 }
