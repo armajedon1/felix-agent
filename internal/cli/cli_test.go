@@ -7,7 +7,7 @@ import (
 )
 
 func TestIsCLICommand(t *testing.T) {
-	valid := []string{"status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "version", "-v", "--version", "help", "-h", "--help"}
+	valid := []string{"cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "version", "-v", "--version", "help", "-h", "--help"}
 	for _, cmd := range valid {
 		if !IsCLICommand(cmd) {
 			t.Errorf("se esperaba que '%s' fuera reconocido como comando CLI", cmd)
@@ -20,6 +20,13 @@ func TestIsCLICommand(t *testing.T) {
 			t.Errorf("no se esperaba que '%s' fuera reconocido como comando CLI", cmd)
 		}
 	}
+}
+
+func TestPrintBanner(t *testing.T) {
+	// Verificar que PrintBanner y PrintHelp no causen panico
+	PrintBanner()
+	PrintVersion()
+	PrintHelp()
 }
 
 func TestCmdConfig(t *testing.T) {

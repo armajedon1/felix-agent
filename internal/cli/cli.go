@@ -27,11 +27,28 @@ import (
 
 func IsCLICommand(arg string) bool {
 	switch strings.ToLower(arg) {
-	case "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "version", "-v", "--version", "help", "-h", "--help":
+	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "version", "-v", "--version", "help", "-h", "--help":
 		return true
 	default:
 		return false
 	}
+}
+
+func PrintBanner() {
+	fmt.Println("================================================================================")
+	fmt.Println(`       /\_/\      ███████╗███████╗██╗     ██╗██╗  ██╗`)
+	fmt.Println(`      ( o.o )     ██╔════╝██╔════╝██║     ██║╚██╗██╔╝`)
+	fmt.Println(`       > ^ <      █████╗  █████╗  ██║     ██║ ╚███╔╝ `)
+	fmt.Println(`      /|   |\     ██╔══╝  ██╔══╝  ██║     ██║ ██╔██╗ `)
+	fmt.Println(`     (_|   |_)    ██║     ███████╗███████╗██║██╔╝ ██╗`)
+	fmt.Println(`       "   "      ╚═╝     ╚══════╝╚══════╝╚═╝╚═╝  ╚═╝`)
+	fmt.Println(`     [FELIX]      A G E N T  //  S W E  &  D e v O p s`)
+	fmt.Println("================================================================================")
+	fmt.Println(" Modo: Consola CLI Interactiva (Workstation & Evaluacion Local)")
+	fmt.Println(" Version: v2.2.0 | Runtime: Go Nativo (Sin dependencias externas)")
+	fmt.Println(" Soberania: Republica Argentina [ARG] | Licencia: MIT Open Source")
+	fmt.Println(" Repositorio: https://github.com/m-leiva/felix-agent")
+	fmt.Println("================================================================================")
 }
 
 func RunCLI(args []string, configPath string) int {
@@ -44,6 +61,8 @@ func RunCLI(args []string, configPath string) int {
 	subArgs := args[1:]
 
 	switch cmd {
+	case "cli":
+		return CmdCLI(subArgs, configPath)
 	case "status":
 		return CmdStatus(configPath)
 	case "logs":
@@ -70,40 +89,33 @@ func RunCLI(args []string, configPath string) int {
 }
 
 func PrintVersion() {
-	fmt.Println("Felix Agent CLI v2.2.0 (Open Source Engine & Harness)")
+	PrintBanner()
 	fmt.Println("Arquitectura: linux/amd64 (Go 1.22+)")
-	fmt.Println("Repositorio: https://github.com/m-leiva/felix-agent")
+	fmt.Println("Compilacion estatica, sin runtime de Python o Node.js.")
 }
 
 func PrintHelp() {
-	fmt.Println("================================================================================")
-	fmt.Println("               FELIX AGENT CLI - CONSOLA DE ADMINISTRACION                      ")
-	fmt.Println("================================================================================")
+	PrintBanner()
 	fmt.Println("Uso: felix <comando> [argumentos...]")
 	fmt.Println()
-	fmt.Println("Comandos disponibles:")
-	fmt.Println("  status                 Muestra el panel de salud, telemetria y estado en vivo")
+	fmt.Println("Comandos para PC / Workstation (Evaluacion y Pruebas Locales):")
+	fmt.Println("  cli                     Inicia la sesion interactiva con presentacion grafica")
+	fmt.Println("  chat [peticion]         Abre consola de chat interactivo o ejecuta un prompt directo")
+	fmt.Println("  status                  Muestra el panel de salud, telemetria y estado en vivo")
+	fmt.Println("  bots [subcomando]       Motor y fabrica de bots comerciales (list, chat, create)")
+	fmt.Println("  config [show|get|set]   Consulta o modifica parametros de inferencia (modelo, api)")
+	fmt.Println("  conv [list|show|search] Inspecciona sesiones e historial persistente en SQLite")
 	fmt.Println("  logs [-n <lineas>] [-f] Muestra o sigue en tiempo real los logs del demonio")
-	fmt.Println("  conv [list|show|search|clear] Inspecciona y gestiona el historial de conversaciones")
-	fmt.Println("  config [show|get|set|path] Consulta o modifica la configuracion del agente")
-	fmt.Println("  bots [list|show|create|replicate|chat|orders|appointments|export|delete]")
-	fmt.Println("                         Motor y fabrica de bots comerciales especializados")
-	fmt.Println("  chat [prompt]          Inicia un chat interactivo por consola o ejecuta un prompt")
-	fmt.Println("  version                Muestra informacion de version y compilacion")
-	fmt.Println("  help                   Muestra esta ayuda de comandos")
+	fmt.Println("  version                 Muestra banner, version e informacion de compilacion")
+	fmt.Println("  help                    Muestra este manual de ayuda")
 	fmt.Println()
-	fmt.Println("Ejemplos:")
-	fmt.Println("  felix status")
-	fmt.Println("  felix logs -n 50 -f")
-	fmt.Println("  felix conv list")
-	fmt.Println("  felix conv show 5491153402646 -n 20")
-	fmt.Println("  felix config get model")
-	fmt.Println("  felix config set model gemini-2.5-flash")
+	fmt.Println("Ejemplos de evaluacion en PC:")
+	fmt.Println("  felix cli")
+	fmt.Println("  felix chat 'Crea un script en Python que analice el uso de disco'")
 	fmt.Println("  felix bots list")
-	fmt.Println("  felix bots create --template pizzeria --id pizzeria-napoli --name 'Pizzeria Napoli'")
-	fmt.Println("  felix bots replicate pizzeria-napoli pizzeria-roma --name 'Pizzeria Roma'")
 	fmt.Println("  felix bots chat pizzeria-napoli")
-	fmt.Println("  felix chat 'Cual es el estado de la memoria RAM del servidor?'")
+	fmt.Println("  felix config show")
+	fmt.Println("  felix status")
 	fmt.Println("================================================================================")
 }
 
@@ -864,11 +876,20 @@ func sendBotChatMessage(endpoint, sessionID, message string) (string, error) {
 	return out, nil
 }
 
+func CmdCLI(args []string, configPath string) int {
+	return CmdChat(args, configPath)
+}
+
 func CmdChat(args []string, configPath string) int {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		fmt.Printf("Error cargando configuracion: %v\n", err)
 		return 1
+	}
+
+	skillsDir := cfg.SkillsDir
+	if skillsDir == "" {
+		skillsDir = "skills"
 	}
 
 	reg := tools.NewRegistry()
@@ -877,11 +898,21 @@ func CmdChat(args []string, configPath string) int {
 	reg.Register(&tools.FileWriteTool{})
 	reg.Register(&tools.FileEditTool{})
 	reg.Register(&tools.FileLsTool{DefaultWorkDir: cfg.WorkspaceDir})
+	reg.Register(&tools.ApplyPatchTool{DefaultWorkDir: cfg.WorkspaceDir})
 	reg.Register(&tools.ProcessTool{})
 	reg.Register(&tools.WebSearchTool{})
 	reg.Register(&tools.WebFetchTool{})
 	reg.Register(&tools.SqliteQueryTool{})
 	reg.Register(&tools.SQLiteInspectorTool{})
+	reg.Register(&tools.GitTool{DefaultRepoDir: cfg.WorkspaceDir})
+	reg.Register(&tools.DockerTool{})
+	reg.Register(&tools.TailscaleTool{})
+	reg.Register(&tools.WeatherTool{})
+	reg.Register(&tools.DocEngineTool{})
+	reg.Register(&tools.NetSentinelTool{})
+	reg.Register(&tools.SkillsListTool{SkillsDir: skillsDir})
+	reg.Register(&tools.SkillsReadTool{SkillsDir: skillsDir})
+	reg.Register(&tools.SkillsWriteTool{SkillsDir: skillsDir})
 
 	ckptStore, _ := checkpoint.NewSQLiteStore(filepath.Join(cfg.DataDir, "checkpoints.db"))
 	if ckptStore != nil {
@@ -897,9 +928,31 @@ func CmdChat(args []string, configPath string) int {
 	defer histMgr.Close()
 
 	scratchpadMgr, _ := tools.NewScratchpadManager(histMgr.DB())
+	if scratchpadMgr != nil {
+		reg.Register(&tools.ScratchpadTool{Manager: scratchpadMgr})
+	}
+	reg.Register(&tools.SessionSearchTool{DB: histMgr.DB()})
+	reg.Register(&tools.SessionHistoryTool{DB: histMgr.DB()})
+	reg.Register(&tools.GoalManagerTool{DB: histMgr.DB()})
+
 	engine := agent.NewEngine(cfg, reg, histMgr)
 	if scratchpadMgr != nil {
 		engine.SetScratchpadManager(scratchpadMgr)
+	}
+
+	if ckptStore != nil {
+		reg.Register(&tools.HarnessDevelopTool{
+			DefaultRepoDir:  cfg.WorkspaceDir,
+			Completer:       engine,
+			CheckpointStore: ckptStore,
+		})
+	}
+
+	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
+	if botStore, errStore := botfactory.NewStorage(botsDBPath); errStore == nil {
+		defer botStore.Close()
+		botMgr := botfactory.NewManager(botStore, engine)
+		reg.Register(&tools.BotFactoryTool{Manager: botMgr})
 	}
 
 	memStore := memory.NewStore(cfg.WorkspaceDir, cfg.DataDir)
@@ -922,24 +975,69 @@ func CmdChat(args []string, configPath string) int {
 		return 0
 	}
 
-	fmt.Println("================================================================================")
-	fmt.Println("               FELIX AGENT - CONSOLA DE CHAT INTERACTIVO                        ")
-	fmt.Println("================================================================================")
-	fmt.Println("Escribe tu peticion tecnica o consulta y presiona Enter.")
-	fmt.Println("Escribe 'salir', 'exit' o 'quit' para terminar.")
-	fmt.Println()
+	PrintBanner()
+	fmt.Printf("Modelo LLM: %s | Workspace: %s\n", cfg.Model, cfg.WorkspaceDir)
+	fmt.Printf("Herramientas activas: %d registradas\n", len(reg.GetOpenAISchemas()))
+	fmt.Println("--------------------------------------------------------------------------------")
+	fmt.Println("Consola de Evaluacion y Pruebas Locales (PC)")
+	fmt.Println("Escribe tu peticion tecnica o consulta en lenguaje natural.")
+	fmt.Println("Comandos especiales:")
+	fmt.Println("  :tools       Lista todas las herramientas activas en esta sesion")
+	fmt.Println("  :model       Muestra el modelo LLM y endpoint configurado")
+	fmt.Println("  :clear       Limpia la pantalla de la terminal")
+	fmt.Println("  :help        Muestra los atajos de la consola")
+	fmt.Println("  :exit        Finaliza la sesion interactiva (o 'salir', 'quit')")
+	fmt.Println("--------------------------------------------------------------------------------")
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("felix> ")
+		fmt.Print("felix [cli]> ")
 		line, _ := reader.ReadString('\n')
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if line == "salir" || line == "exit" || line == "quit" {
-			fmt.Println("Finalizando sesion de chat.")
+		if line == ":exit" || line == "salir" || line == "exit" || line == "quit" {
+			fmt.Println("Sesion interactiva finalizada.")
 			break
+		}
+		if line == ":clear" {
+			fmt.Print("\033[H\033[2J")
+			PrintBanner()
+			continue
+		}
+		if line == ":help" {
+			fmt.Println("Comandos de la consola CLI:")
+			fmt.Println("  :tools       Lista el catalogo de herramientas disponibles")
+			fmt.Println("  :model       Muestra la configuracion del proveedor LLM")
+			fmt.Println("  :clear       Limpia la pantalla")
+			fmt.Println("  :exit        Sale de la consola interactiva")
+			fmt.Println("Cualquier otro texto se envia a Felix para su analisis y ejecucion.")
+			continue
+		}
+		if line == ":model" {
+			fmt.Println("Configuracion de Inferencia:")
+			fmt.Printf("  Modelo Primario:  %s\n", cfg.Model)
+			fmt.Printf("  API Base:         %s\n", cfg.APIBase)
+			fmt.Printf("  Proveedor:        %s\n", cfg.Provider)
+			fmt.Printf("  Max Iteraciones:  %d\n", cfg.MaxIterations)
+			if cfg.FallbackModel != "" {
+				fmt.Printf("  Modelo Fallback:  %s\n", cfg.FallbackModel)
+			}
+			continue
+		}
+		if line == ":tools" {
+			schemas := reg.GetOpenAISchemas()
+			fmt.Printf("Herramientas Registradas (%d):\n", len(schemas))
+			for i, s := range schemas {
+				desc := s.Function.Description
+				if len(desc) > 70 {
+					desc = desc[:67] + "..."
+				}
+				fmt.Printf("  %2d) %-22s - %s\n", i+1, s.Function.Name, desc)
+			}
+			fmt.Println()
+			continue
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
