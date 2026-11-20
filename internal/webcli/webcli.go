@@ -1,6 +1,7 @@
 package webcli
 
 import (
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -11,9 +12,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"felix-go/internal/botfactory"
 	"felix-go/internal/config"
@@ -27,6 +31,7 @@ type Server struct {
 	storage    *botfactory.Storage
 	cfg        *config.Config
 	dataDir    string
+	configPath string
 	httpServer *http.Server
 	listener   net.Listener
 	mu         sync.RWMutex
@@ -46,6 +51,27 @@ func NewServer(port int, storage *botfactory.Storage, cfg *config.Config, dataDi
 	}
 }
 
+func (s *Server) SetConfigPath(p string) {
+	s.configPath = p
+}
+
+func (s *Server) resolveConfigPath() string {
+	if s.configPath != "" {
+		return s.configPath
+	}
+	candidates := []string{
+		"/home/matias/felix-server/config.json",
+		"/home/matias/felix-go/config.json",
+		"config.json",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "config.json"
+}
+
 func (s *Server) Start() (int, error) {
 	mux := http.NewServeMux()
 
@@ -62,14 +88,29 @@ func (s *Server) Start() (int, error) {
 	_ = os.MkdirAll(avatarsDir, 0755)
 	mux.Handle("/avatars/", http.StripPrefix("/avatars/", http.FileServer(http.Dir(avatarsDir))))
 
-	// Endpoints REST
+	// Endpoints REST - ABM Bots
 	mux.HandleFunc("/api/v1/status", s.handleStatus)
 	mux.HandleFunc("/api/v1/bots", s.handleBots)
-	mux.HandleFunc("/api/v1/bots/", s.handleBotActions)
+	mux.HandleFunc("/api/v1/bots/", s.handleBotRoute)
+
+	// Endpoints REST - ABM Numeros
 	mux.HandleFunc("/api/v1/numbers", s.handleNumbers)
 	mux.HandleFunc("/api/v1/numbers/assign", s.handleAssignNumber)
 	mux.HandleFunc("/api/v1/numbers/release", s.handleReleaseNumber)
+
+	// Endpoints REST - ABM Base de Datos
+	mux.HandleFunc("/api/v1/db/status", s.handleDBStatus)
+	mux.HandleFunc("/api/v1/db/vacuum", s.handleDBVacuum)
+	mux.HandleFunc("/api/v1/db/backup", s.handleDBBackup)
+	mux.HandleFunc("/api/v1/db/backups", s.handleDBBackupsList)
+	mux.HandleFunc("/api/v1/db/tables", s.handleDBTables)
+
+	// Endpoints REST - ABM APIs e Inferencia
 	mux.HandleFunc("/api/v1/apis", s.handleAPIs)
+	mux.HandleFunc("/api/v1/apis/test", s.handleAPIsTest)
+
+	// Endpoints REST - Auth y Logs
+	mux.HandleFunc("/api/v1/auth/status", s.handleAuthStatus)
 	mux.HandleFunc("/api/v1/logs/bots", s.handleLogs)
 	mux.HandleFunc("/api/v1/logs/stream", s.handleLogStream)
 	mux.HandleFunc("/api/v1/command", s.handleCommand)
@@ -77,7 +118,6 @@ func (s *Server) Start() (int, error) {
 	// Asignacion de puerto con fallback automatico si 8056 esta ocupado
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", s.port))
 	if err != nil {
-		// Intentar en cualquier puerto libre disponible
 		listener, err = net.Listen("tcp", "0.0.0.0:0")
 		if err != nil {
 			return 0, fmt.Errorf("no se pudo abrir puerto para Web CLI: %w", err)
@@ -134,11 +174,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"sovereignty": "Republica Argentina [ARG]",
 		"port":        s.port,
 		"status":      "online",
+		"data_dir":    s.dataDir,
 		"time":        time.Now().UTC().Format(time.RFC3339),
 	}
 	_ = json.NewEncoder(w).Encode(status)
 }
 
+// handleBots gestiona GET (listar) y POST (crear bot)
 func (s *Server) handleBots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.storage == nil {
@@ -146,24 +188,210 @@ func (s *Server) handleBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bots, err := s.storage.ListBots()
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		bots, err := s.storage.ListBots()
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		type BotSummary struct {
+			*botfactory.BotSpec
+			TotalOrders       int64 `json:"total_orders"`
+			TotalAppointments int64 `json:"total_appointments"`
+			TotalMessages     int64 `json:"total_messages"`
+		}
+
+		result := make([]BotSummary, 0, len(bots))
+		for _, b := range bots {
+			stats, _ := s.storage.GetStats(b.ID)
+			bs := BotSummary{BotSpec: b}
+			if stats != nil {
+				bs.TotalOrders = stats.TotalOrders
+				bs.TotalAppointments = stats.TotalAppointments
+				bs.TotalMessages = stats.TotalMessages
+			}
+			result = append(result, bs)
+		}
+		_ = json.NewEncoder(w).Encode(result)
+
+	case http.MethodPost:
+		var req struct {
+			Template        string                    `json:"template"`
+			ID              string                    `json:"id"`
+			Name            string                    `json:"name"`
+			Type            botfactory.BotType        `json:"type"`
+			Description     string                    `json:"description"`
+			Personality     string                    `json:"personality"`
+			SystemPrompt    string                    `json:"system_prompt"`
+			PhoneNumber     string                    `json:"phone_number"`
+			StrictGrounding bool                      `json:"strict_grounding"`
+			Catalog         []botfactory.CatalogItem  `json:"catalog"`
+			FAQ             []botfactory.FAQItem      `json:"faq"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "cuerpo JSON invalido"})
+			return
+		}
+
+		req.ID = strings.TrimSpace(req.ID)
+		if req.ID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "el campo 'id' es obligatorio"})
+			return
+		}
+
+		var spec *botfactory.BotSpec
+		switch strings.ToLower(req.Template) {
+		case "pizzeria":
+			spec = botfactory.TemplatePizzeria()
+		case "appointments", "turnos":
+			spec = botfactory.TemplateAppointments()
+		case "calls", "llamadas":
+			spec = botfactory.TemplateCallScheduler()
+		case "faq_support", "soporte":
+			spec = botfactory.TemplateFAQSupport()
+		case "mosiah":
+			spec = botfactory.TemplateMosiah()
+		default:
+			spec = &botfactory.BotSpec{
+				ID:              req.ID,
+				Name:            req.Name,
+				Type:            req.Type,
+				Description:     req.Description,
+				Personality:     req.Personality,
+				SystemPrompt:    req.SystemPrompt,
+				PhoneNumber:     req.PhoneNumber,
+				StrictGrounding: req.StrictGrounding,
+				Catalog:         req.Catalog,
+				FAQ:             req.FAQ,
+				Status:          "active",
+			}
+			if spec.Type == "" {
+				spec.Type = botfactory.TypeCustom
+			}
+		}
+
+		// Aplicar overrides si venia de template
+		if req.Template != "" {
+			spec.ID = req.ID
+			if req.Name != "" {
+				spec.Name = req.Name
+			}
+			if req.Description != "" {
+				spec.Description = req.Description
+			}
+			if req.SystemPrompt != "" {
+				spec.SystemPrompt = req.SystemPrompt
+			}
+			if req.PhoneNumber != "" {
+				spec.PhoneNumber = req.PhoneNumber
+			}
+			if len(req.Catalog) > 0 {
+				spec.Catalog = req.Catalog
+			}
+			if len(req.FAQ) > 0 {
+				spec.FAQ = req.FAQ
+			}
+		}
+
+		if err := s.storage.SaveBot(spec); err != nil {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(spec)
+
+	default:
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
 	}
-	_ = json.NewEncoder(w).Encode(bots)
 }
 
-func (s *Server) handleBotActions(w http.ResponseWriter, r *http.Request) {
+// handleBotRoute gestiona GET, PUT, DELETE sobre /api/v1/bots/:id y acciones :id/start, :id/stop, :id/avatar, :id/replicate
+func (s *Server) handleBotRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/bots/"), "/")
-	if len(parts) < 2 {
-		http.Error(w, `{"error":"ruta invalida"}`, http.StatusBadRequest)
+	if s.storage == nil {
+		http.Error(w, `{"error":"storage no disponible"}`, http.StatusInternalServerError)
 		return
 	}
-	botID := parts[0]
-	action := parts[1]
 
+	pathTail := strings.TrimPrefix(r.URL.Path, "/api/v1/bots/")
+	parts := strings.Split(pathTail, "/")
+	botID := parts[0]
+
+	if botID == "" {
+		http.Error(w, `{"error":"id de bot vacio"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Ruta: /api/v1/bots/:id
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			bot, err := s.storage.GetBot(botID)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			stats, _ := s.storage.GetStats(botID)
+			response := map[string]any{
+				"bot":   bot,
+				"stats": stats,
+			}
+			_ = json.NewEncoder(w).Encode(response)
+
+		case http.MethodPut:
+			var updated botfactory.BotSpec
+			if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "cuerpo JSON invalido"})
+				return
+			}
+			existing, err := s.storage.GetBot(botID)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "bot no encontrado"})
+				return
+			}
+
+			updated.ID = botID
+			updated.CreatedAt = existing.CreatedAt
+			if updated.Status == "" {
+				updated.Status = existing.Status
+			}
+			if updated.AvatarPath == "" {
+				updated.AvatarPath = existing.AvatarPath
+			}
+
+			if err := s.storage.SaveBot(&updated); err != nil {
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(updated)
+
+		case http.MethodDelete:
+			if err := s.storage.DeleteBot(botID); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "deleted_id": botID})
+
+		default:
+			http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	// Acciones: /api/v1/bots/:id/<action>
+	action := parts[1]
 	switch action {
 	case "start":
 		if err := s.storage.SetBotActive(botID, true); err != nil {
@@ -180,6 +408,43 @@ func (s *Server) handleBotActions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "bot_id": botID, "active": false})
+
+	case "replicate":
+		var req struct {
+			NewID   string `json:"new_id"`
+			NewName string `json:"new_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "se requiere new_id para replicar"})
+			return
+		}
+		source, err := s.storage.GetBot(botID)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "bot origen no encontrado"})
+			return
+		}
+		clone := *source
+		clone.ID = req.NewID
+		if req.NewName != "" {
+			clone.Name = req.NewName
+		} else {
+			clone.Name = source.Name + " (Copia)"
+		}
+		clone.PhoneNumber = ""
+		clone.Status = "inactive"
+		clone.IsActive = false
+		clone.CreatedAt = time.Now().UTC()
+		clone.UpdatedAt = time.Now().UTC()
+		clone.ReplicationSource = source.ID
+
+		if err := s.storage.SaveBot(&clone); err != nil {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(clone)
 
 	case "avatar":
 		if r.Method != http.MethodPost {
@@ -226,6 +491,7 @@ func (s *Server) handleBotActions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleNumbers gestiona GET (listar lineas)
 func (s *Server) handleNumbers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if s.storage == nil {
@@ -240,6 +506,7 @@ func (s *Server) handleNumbers(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(numbers)
 }
 
+// handleAssignNumber vincula numero con validacion de choque
 func (s *Server) handleAssignNumber(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -264,6 +531,7 @@ func (s *Server) handleAssignNumber(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "bot_id": req.BotID, "phone_number": req.PhoneNumber})
 }
 
+// handleReleaseNumber desvincula linea
 func (s *Server) handleReleaseNumber(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -287,29 +555,350 @@ func (s *Server) handleReleaseNumber(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
+// handleDBStatus inspecciona tamanos e integridad de bases SQLite
+func (s *Server) handleDBStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+
+	type DBInfo struct {
+		Name       string `json:"name"`
+		Exists     bool   `json:"exists"`
+		SizeBytes  int64  `json:"size_bytes"`
+		SizeKB     string `json:"size_kb"`
+		WalSizeKB  string `json:"wal_size_kb"`
+		Integrity  string `json:"integrity"`
+	}
+
+	result := make([]DBInfo, 0, len(dbNames))
+	for _, name := range dbNames {
+		p := filepath.Join(s.dataDir, name)
+		fi, err := os.Stat(p)
+		if err != nil {
+			result = append(result, DBInfo{Name: name, Exists: false, SizeKB: "0 KB", WalSizeKB: "-", Integrity: "-"})
+			continue
+		}
+		walFi, walErr := os.Stat(p + "-wal")
+		walStr := "0 KB"
+		if walErr == nil {
+			walStr = fmt.Sprintf("%.2f KB", float64(walFi.Size())/1024)
+		}
+
+		integrity := "OK"
+		db, dbErr := sql.Open("sqlite", "file:"+p+"?_pragma=busy_timeout(1000)")
+		if dbErr == nil {
+			var check string
+			if err := db.QueryRow("PRAGMA quick_check;").Scan(&check); err != nil || check != "ok" {
+				integrity = "WARN"
+			}
+			db.Close()
+		} else {
+			integrity = "ERROR"
+		}
+
+		result = append(result, DBInfo{
+			Name:      name,
+			Exists:    true,
+			SizeBytes: fi.Size(),
+			SizeKB:    fmt.Sprintf("%.2f KB", float64(fi.Size())/1024),
+			WalSizeKB: walStr,
+			Integrity: integrity,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleDBVacuum compacta y optimiza las bases
+func (s *Server) handleDBVacuum(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+	optimized := []string{}
+	for _, name := range dbNames {
+		p := filepath.Join(s.dataDir, name)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		db, err := sql.Open("sqlite", p)
+		if err != nil {
+			continue
+		}
+		_, _ = db.Exec("VACUUM; PRAGMA optimize;")
+		db.Close()
+		optimized = append(optimized, name)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "optimized": optimized})
+}
+
+// handleDBBackup genera backups timestamped
+func (s *Server) handleDBBackup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	destDir := filepath.Join(s.dataDir, "backups")
+	_ = os.MkdirAll(destDir, 0755)
+	ts := time.Now().UTC().Format("20060102_150405")
+
+	dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+	created := []string{}
+
+	for _, name := range dbNames {
+		srcPath := filepath.Join(s.dataDir, name)
+		if _, err := os.Stat(srcPath); err != nil {
+			continue
+		}
+		baseName := strings.TrimSuffix(name, ".db")
+		dstName := fmt.Sprintf("%s_%s.bak", baseName, ts)
+		dstPath := filepath.Join(destDir, dstName)
+
+		inF, err := os.Open(srcPath)
+		if err != nil {
+			continue
+		}
+		outF, err := os.Create(dstPath)
+		if err != nil {
+			inF.Close()
+			continue
+		}
+		_, _ = io.Copy(outF, inF)
+		inF.Close()
+		outF.Close()
+		created = append(created, dstName)
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "backups_created": created})
+}
+
+// handleDBBackupsList lista los backups existentes
+func (s *Server) handleDBBackupsList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	destDir := filepath.Join(s.dataDir, "backups")
+	entries, err := os.ReadDir(destDir)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode([]any{})
+		return
+	}
+
+	type BackupItem struct {
+		Filename string `json:"filename"`
+		SizeKB   string `json:"size_kb"`
+		ModTime  string `json:"mod_time"`
+	}
+
+	items := []BackupItem{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		items = append(items, BackupItem{
+			Filename: e.Name(),
+			SizeKB:   fmt.Sprintf("%.2f KB", float64(fi.Size())/1024),
+			ModTime:  fi.ModTime().Format(time.RFC3339),
+		})
+	}
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+// handleDBTables cuenta registros por tabla
+func (s *Server) handleDBTables(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	type TableStats struct {
+		Database string `json:"database"`
+		Table    string `json:"table"`
+		Rows     int64  `json:"rows"`
+	}
+
+	result := []TableStats{}
+	dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+
+	for _, name := range dbNames {
+		p := filepath.Join(s.dataDir, name)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		db, err := sql.Open("sqlite", "file:"+p+"?_pragma=busy_timeout(1000)")
+		if err != nil {
+			continue
+		}
+		rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+		if err == nil {
+			for rows.Next() {
+				var tName string
+				if err := rows.Scan(&tName); err == nil {
+					var count int64
+					_ = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tName)).Scan(&count)
+					result = append(result, TableStats{Database: name, Table: tName, Rows: count})
+				}
+			}
+			rows.Close()
+		}
+		db.Close()
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleAPIs gestiona consulta y actualizacion de configuracion de inferencia
 func (s *Server) handleAPIs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	apis := []map[string]string{
-		{
-			"provider": "Google Gemini",
-			"model":    s.cfg.Model,
-			"endpoint": s.cfg.APIBase,
-			"status":   "ACTIVO",
-		},
-		{
-			"provider": "Antigravity Tools Proxy",
-			"model":    "gemini-3.8-flash-high",
-			"endpoint": "http://127.0.0.1:8045/v1",
-			"status":   "LOCAL",
-		},
-		{
-			"provider": "OpenAI Compatible",
-			"model":    "gpt-4o",
-			"endpoint": "https://api.openai.com/v1",
-			"status":   "DISPONIBLE",
-		},
+
+	if r.Method == http.MethodGet {
+		info := map[string]any{
+			"provider":               s.cfg.Provider,
+			"model":                  s.cfg.Model,
+			"api_base":               s.cfg.APIBase,
+			"api_key_set":            s.cfg.APIKey != "",
+			"fallback_provider":      "groq",
+			"fallback_model":         s.cfg.FallbackModel,
+			"fallback_api_base":      s.cfg.FallbackAPIBase,
+			"fallback_api_key_set":   s.cfg.FallbackAPIKey != "",
+			"groq_api_key_set":       s.cfg.GroqAPIKey != "",
+			"openai_api_key_set":     s.cfg.OpenAIAPIKey != "",
+			"antigravity_proxy_base": "http://127.0.0.1:8045/v1",
+		}
+		_ = json.NewEncoder(w).Encode(info)
+		return
 	}
-	_ = json.NewEncoder(w).Encode(apis)
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			Provider        string `json:"provider"`
+			Model           string `json:"model"`
+			APIBase         string `json:"api_base"`
+			APIKey          string `json:"api_key"`
+			FallbackModel   string `json:"fallback_model"`
+			FallbackAPIBase string `json:"fallback_api_base"`
+			FallbackAPIKey  string `json:"fallback_api_key"`
+			GroqAPIKey      string `json:"groq_api_key"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "cuerpo JSON invalido"})
+			return
+		}
+
+		if req.Provider != "" {
+			s.cfg.Provider = req.Provider
+		}
+		if req.Model != "" {
+			s.cfg.Model = req.Model
+		}
+		if req.APIBase != "" {
+			s.cfg.APIBase = req.APIBase
+		}
+		if req.APIKey != "" {
+			s.cfg.APIKey = req.APIKey
+		}
+		if req.FallbackModel != "" {
+			s.cfg.FallbackModel = req.FallbackModel
+		}
+		if req.FallbackAPIBase != "" {
+			s.cfg.FallbackAPIBase = req.FallbackAPIBase
+		}
+		if req.FallbackAPIKey != "" {
+			s.cfg.FallbackAPIKey = req.FallbackAPIKey
+		}
+		if req.GroqAPIKey != "" {
+			s.cfg.GroqAPIKey = req.GroqAPIKey
+		}
+
+		configPath := s.resolveConfigPath()
+		if err := s.cfg.Save(configPath); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("error guardando config: %v", err)})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "saved_path": configPath})
+		return
+	}
+
+	http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+}
+
+// handleAPIsTest prueba la conexion en tiempo real contra un endpoint
+func (s *Server) handleAPIsTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Endpoint string `json:"endpoint"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	target := req.Endpoint
+	if target == "" {
+		target = s.cfg.APIBase
+	}
+	if target == "" {
+		target = "http://127.0.0.1:8045/v1"
+	}
+
+	start := time.Now()
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(target)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":         false,
+			"target":     target,
+			"latency_ms": latency,
+			"error":      err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":          true,
+		"target":      target,
+		"status_code": resp.StatusCode,
+		"latency_ms":  latency,
+	})
+}
+
+// handleAuthStatus reporta el estado de integraciones de credenciales
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	waDBPath := filepath.Join(s.dataDir, "whatsapp.db")
+	waDeviceRegistered := false
+	var jid string
+
+	if _, err := os.Stat(waDBPath); err == nil {
+		db, err := sql.Open("sqlite", "file:"+waDBPath+"?_pragma=busy_timeout(1000)")
+		if err == nil {
+			var count int
+			_ = db.QueryRow("SELECT COUNT(*) FROM whatsmeow_device").Scan(&count)
+			waDeviceRegistered = count > 0
+			_ = db.QueryRow("SELECT jid FROM whatsmeow_device LIMIT 1").Scan(&jid)
+			db.Close()
+		}
+	}
+
+	status := map[string]any{
+		"whatsapp": map[string]any{
+			"registered": waDeviceRegistered,
+			"jid":        jid,
+			"db_path":    waDBPath,
+		},
+		"groq":   s.cfg.GroqAPIKey != "",
+		"openai": s.cfg.OpenAIAPIKey != "",
+		"gemini": s.cfg.APIKey != "",
+	}
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -325,9 +914,9 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if botID != "" {
-		logs, err = s.storage.GetBotLogs(botID, 50, level)
+		logs, err = s.storage.GetBotLogs(botID, 100, level)
 	} else {
-		logs, err = s.storage.GetAllBotLogs(50, level)
+		logs, err = s.storage.GetAllBotLogs(100, level)
 	}
 
 	if err != nil {
@@ -349,7 +938,7 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	logChan := make(chan botfactory.BotLogEntry, 20)
+	logChan := make(chan botfactory.BotLogEntry, 50)
 	s.mu.Lock()
 	s.clients[logChan] = true
 	s.mu.Unlock()
@@ -390,33 +979,219 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := strings.TrimSpace(req.Command)
-	switch strings.ToLower(cmd) {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		fmt.Fprintf(w, "Ingrese un comando. Escriba 'help' para ver la lista de comandos disponibles.")
+		return
+	}
+
+	rootCmd := strings.ToLower(parts[0])
+	switch rootCmd {
+	case "help":
+		fmt.Fprintf(w, "Comandos disponibles en la consola:\n")
+		fmt.Fprintf(w, "  status             - Muestra estado y salud general de Felix Server\n")
+		fmt.Fprintf(w, "  bots               - Lista todos los bots comerciales y su estado\n")
+		fmt.Fprintf(w, "  numbers            - Lista la matriz de asignacion de lineas\n")
+		fmt.Fprintf(w, "  db status          - Diagnostico de tamano, WAL e integridad SQLite\n")
+		fmt.Fprintf(w, "  db vacuum          - Ejecuta VACUUM en caliente y optimizacion de SQLite\n")
+		fmt.Fprintf(w, "  db backup          - Genera respaldo timestamped inmediato\n")
+		fmt.Fprintf(w, "  db tables          - Detalle de tablas y conteo de registros\n")
+		fmt.Fprintf(w, "  apis               - Muestra modelos configurados y endpoints\n")
+		fmt.Fprintf(w, "  auth               - Diagnostico de claves y credenciales del sistema\n")
+		fmt.Fprintf(w, "  version            - Version y arquitectura de ejecucion\n")
+
+	case "version":
+		fmt.Fprintf(w, "Felix Agent v2.2.0 (Soberania Tecnologica Argentina [ARG])\n")
+		fmt.Fprintf(w, "Runtime: %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+
 	case "status":
-		fmt.Fprintf(w, "Felix Agent v2.2.0 | Puerto: %d | Soberania: Republica Argentina [ARG]\nEstado: Operativo 100%%", s.port)
+		bots, _ := s.storage.ListBots()
+		onlineBots := 0
+		for _, b := range bots {
+			if b.Status == "active" || b.IsActive {
+				onlineBots++
+			}
+		}
+		fmt.Fprintf(w, "Felix Agent v2.2.0 | Puerto Web CLI: %d | Soberania: Republica Argentina [ARG]\n", s.port)
+		fmt.Fprintf(w, "Estado General:          ONLINE (Operativo 100%%)\n")
+		fmt.Fprintf(w, "Bots Registrados:        %d (Online: %d)\n", len(bots), onlineBots)
+		fmt.Fprintf(w, "Proveedor Inferencia:    %s (%s)\n", s.cfg.Provider, s.cfg.APIBase)
+		fmt.Fprintf(w, "Modelo Principal:        %s\n", s.cfg.Model)
+		if s.cfg.FallbackModel != "" {
+			fmt.Fprintf(w, "Modelo de Fallback:      %s (%s)\n", s.cfg.FallbackModel, s.cfg.FallbackAPIBase)
+		}
+
 	case "bots":
 		bots, err := s.storage.ListBots()
 		if err != nil {
-			fmt.Fprintf(w, "Error listando bots: %v", err)
+			fmt.Fprintf(w, "Error listando bots: %v\n", err)
 			return
 		}
 		fmt.Fprintf(w, "Total bots registrados: %d\n", len(bots))
 		for _, b := range bots {
-			fmt.Fprintf(w, "- [%s] %s (%s) - Numero: %s - Estado: %s\n", b.ID, b.Name, b.Type, b.PhoneNumber, b.Status)
+			state := "OFFLINE"
+			if b.Status == "active" || b.IsActive {
+				state = "ONLINE"
+			}
+			phone := b.PhoneNumber
+			if phone == "" {
+				phone = "-"
+			}
+			fmt.Fprintf(w, "- [%-18s] %-20s (%-14s) | Linea: %-15s | Estado: %s\n", b.ID, b.Name, b.Type, phone, state)
 		}
+
 	case "numbers":
 		numbers, err := s.storage.ListNumbers()
 		if err != nil {
-			fmt.Fprintf(w, "Error: %v", err)
+			fmt.Fprintf(w, "Error listando numeros: %v\n", err)
 			return
 		}
+		fmt.Fprintf(w, "Total lineas asignadas: %d\n", len(numbers))
 		for _, n := range numbers {
-			act := "INACTIVO"
+			act := "STANDBY"
 			if n.IsActive {
 				act = "ACTIVO"
 			}
-			fmt.Fprintf(w, "- %s -> Bot: %s (%s) [%s]\n", n.PhoneNumber, n.BotName, n.BotID, act)
+			fmt.Fprintf(w, "- %-18s -> Bot: %-16s (%-18s) [%s]\n", n.PhoneNumber, n.BotID, n.BotName, act)
 		}
+
+	case "db":
+		sub := "status"
+		if len(parts) > 1 {
+			sub = strings.ToLower(parts[1])
+		}
+		switch sub {
+		case "vacuum":
+			dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+			for _, name := range dbNames {
+				p := filepath.Join(s.dataDir, name)
+				if _, err := os.Stat(p); err != nil {
+					continue
+				}
+				db, err := sql.Open("sqlite", p)
+				if err != nil {
+					continue
+				}
+				_, _ = db.Exec("VACUUM; PRAGMA optimize;")
+				db.Close()
+				fmt.Fprintf(w, "- %s: optimizado y compactado\n", name)
+			}
+			fmt.Fprintf(w, "Operacion VACUUM completada exitosamente.\n")
+
+		case "backup":
+			destDir := filepath.Join(s.dataDir, "backups")
+			_ = os.MkdirAll(destDir, 0755)
+			ts := time.Now().UTC().Format("20060102_150405")
+			dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+			for _, name := range dbNames {
+				srcPath := filepath.Join(s.dataDir, name)
+				if _, err := os.Stat(srcPath); err != nil {
+					continue
+				}
+				baseName := strings.TrimSuffix(name, ".db")
+				dstName := fmt.Sprintf("%s_%s.bak", baseName, ts)
+				dstPath := filepath.Join(destDir, dstName)
+				src, err := os.Open(srcPath)
+				if err != nil {
+					continue
+				}
+				dst, err := os.Create(dstPath)
+				if err != nil {
+					src.Close()
+					continue
+				}
+				_, _ = io.Copy(dst, src)
+				src.Close()
+				dst.Close()
+				fmt.Fprintf(w, "- %s -> %s\n", name, dstName)
+			}
+			fmt.Fprintf(w, "Respaldos generados en %s\n", destDir)
+
+		case "tables":
+			dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+			for _, name := range dbNames {
+				p := filepath.Join(s.dataDir, name)
+				if _, err := os.Stat(p); err != nil {
+					continue
+				}
+				db, err := sql.Open("sqlite", "file:"+p+"?_pragma=busy_timeout(1000)")
+				if err != nil {
+					continue
+				}
+				rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+				if err == nil {
+					for rows.Next() {
+						var tName string
+						if err := rows.Scan(&tName); err == nil {
+							var count int64
+							_ = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM \"%s\"", tName)).Scan(&count)
+							fmt.Fprintf(w, "[%-14s] %-24s: %d filas\n", name, tName, count)
+						}
+					}
+					rows.Close()
+				}
+				db.Close()
+			}
+
+		default:
+			dbNames := []string{"bots.db", "sessions.db", "users.db", "reminders.db"}
+			fmt.Fprintf(w, "%-20s | %-12s | %-12s | %-10s\n", "BASE DE DATOS", "TAMANO BASE", "TAMANO WAL", "INTEGRIDAD")
+			fmt.Fprintf(w, "---------------------------------------------------------------\n")
+			for _, name := range dbNames {
+				p := filepath.Join(s.dataDir, name)
+				fi, err := os.Stat(p)
+				if err != nil {
+					fmt.Fprintf(w, "%-20s | %-12s | %-12s | %-10s\n", name, "No existe", "-", "-")
+					continue
+				}
+				sizeStr := fmt.Sprintf("%.2f KB", float64(fi.Size())/1024)
+				walStr := "0 KB"
+				if walFi, err := os.Stat(p + "-wal"); err == nil {
+					walStr = fmt.Sprintf("%.2f KB", float64(walFi.Size())/1024)
+				}
+				integrity := "OK"
+				db, err := sql.Open("sqlite", "file:"+p+"?_pragma=busy_timeout(1000)")
+				if err == nil {
+					var check string
+					if err := db.QueryRow("PRAGMA quick_check;").Scan(&check); err != nil || check != "ok" {
+						integrity = "WARN"
+					}
+					db.Close()
+				}
+				fmt.Fprintf(w, "%-20s | %-12s | %-12s | %-10s\n", name, sizeStr, walStr, integrity)
+			}
+		}
+
+	case "apis":
+		fmt.Fprintf(w, "Configuracion de APIs e Inferencia:\n")
+		fmt.Fprintf(w, "  Proveedor Primario:  %s\n", s.cfg.Provider)
+		fmt.Fprintf(w, "  Modelo Principal:    %s\n", s.cfg.Model)
+		fmt.Fprintf(w, "  Endpoint Base:       %s\n", s.cfg.APIBase)
+		if s.cfg.FallbackModel != "" {
+			fmt.Fprintf(w, "  Modelo Fallback:     %s\n", s.cfg.FallbackModel)
+			fmt.Fprintf(w, "  Endpoint Fallback:   %s\n", s.cfg.FallbackAPIBase)
+		}
+
+	case "auth":
+		fmt.Fprintf(w, "Estado de Credenciales y Sesiones:\n")
+		keyStatus := "NO CONFIGURADA"
+		if s.cfg.APIKey != "" {
+			keyStatus = fmt.Sprintf("Configurada (%d chars)", len(s.cfg.APIKey))
+		}
+		fmt.Fprintf(w, "  Inferencia LLM:       %s\n", keyStatus)
+		groqStatus := "NO CONFIGURADA"
+		if s.cfg.GroqAPIKey != "" {
+			groqStatus = "Configurada"
+		}
+		fmt.Fprintf(w, "  Groq Audio Whisper:   %s\n", groqStatus)
+		waDB := filepath.Join(s.dataDir, "whatsapp.db")
+		waStatus := "Sin sesion"
+		if fi, err := os.Stat(waDB); err == nil && fi.Size() > 0 {
+			waStatus = "Sesion activa (" + fmt.Sprintf("%.1f KB", float64(fi.Size())/1024) + ")"
+		}
+		fmt.Fprintf(w, "  WhatsApp DB:          %s\n", waStatus)
+
 	default:
-		fmt.Fprintf(w, "Comando '%s' ejecutado en entorno Felix. Subcomandos validos: status, bots, numbers.", cmd)
+		fmt.Fprintf(w, "Comando '%s' no reconocido. Escriba 'help' para ver los comandos validos.", cmd)
 	}
 }

@@ -256,6 +256,12 @@ func (s *Storage) DeleteBot(id string) error {
 	if _, err := tx.Exec("DELETE FROM bot_appointments WHERE bot_id = ?", id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec("DELETE FROM bot_numbers WHERE bot_id = ?", id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM bot_logs WHERE bot_id = ?", id); err != nil {
+		return err
+	}
 	res, err := tx.Exec("DELETE FROM bots WHERE id = ?", id)
 	if err != nil {
 		return err

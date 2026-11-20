@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Felix Agent - Consola de Administracion</title>
+  <title>Felix Agent - Consola de Administracion y ABM</title>
   <style>
     :root {
       --bg-body: #f8fafc;
@@ -90,7 +90,8 @@
       border-bottom: 1px solid var(--border-subtle);
       display: flex;
       padding: 0 24px;
-      gap: 16px;
+      gap: 8px;
+      overflow-x: auto;
     }
 
     .nav-tab {
@@ -102,6 +103,7 @@
       font-weight: 600;
       color: var(--text-muted);
       cursor: pointer;
+      white-space: nowrap;
     }
 
     .nav-tab:hover { color: var(--primary); }
@@ -112,7 +114,7 @@
 
     main {
       padding: 24px;
-      max-width: 1300px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
@@ -135,12 +137,43 @@
       margin-bottom: 16px;
       border-bottom: 1px solid var(--border-subtle);
       padding-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 10px;
     }
 
     .card-title {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       color: var(--text-main);
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+
+    .stat-val {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-top: 4px;
     }
 
     table {
@@ -153,6 +186,7 @@
       padding: 10px 12px;
       text-align: left;
       border-bottom: 1px solid var(--border-subtle);
+      vertical-align: middle;
     }
 
     th {
@@ -189,6 +223,7 @@
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
+      transition: background 0.15s;
     }
 
     .btn:hover { background: #e2e8f0; }
@@ -200,8 +235,8 @@
     .btn-success:hover { background: #15803d; }
 
     .avatar-thumb {
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       border-radius: 6px;
       object-fit: cover;
       border: 1px solid var(--border-subtle);
@@ -211,7 +246,105 @@
       justify-content: center;
       font-weight: 700;
       color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
       font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      background: #ffffff;
+    }
+
+    .input-field:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+    }
+
+    textarea.input-field {
+      resize: vertical;
+      min-height: 80px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    /* Modales */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 650px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      padding: 24px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .modal-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 16px;
+      margin-top: 20px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
     }
 
     .log-terminal {
@@ -233,65 +366,71 @@
       word-break: break-all;
     }
 
-    .log-ts { color: #64748b; min-width: 140px; }
-    .log-bot { color: #38bdf8; font-weight: 600; min-width: 90px; }
+    .log-ts { color: #64748b; min-width: 90px; }
+    .log-bot { color: #38bdf8; font-weight: 600; min-width: 110px; }
     .log-lvl-info { color: #4ade80; }
     .log-lvl-warn { color: #fbbf24; }
     .log-lvl-error { color: #f87171; font-weight: 700; }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-    }
-
-    .input-field {
-      width: 100%;
-      padding: 8px 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      font-size: 13px;
-      margin-top: 4px;
-      outline: none;
-    }
-
-    .input-field:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
-    }
   </style>
 </head>
 <body>
 
   <header>
     <div class="brand">
-      <div class="brand-title">FELIX AGENT // PANEL DE CONTROL</div>
+      <div class="brand-title">FELIX AGENT // PANEL DE CONTROL Y ABM</div>
       <div class="badge-sovereignty">[ARG] SOBERANIA TECNOLOGICA</div>
     </div>
-    <div class="env-selector">
-      <span>Entorno:</span>
-      <select id="envSelect" onchange="switchEnvironment(this.value)">
-        <option value="local">Local (Workstation PC :8056)</option>
-        <option value="homelab">Servidor Homelab (100.96.230.125:8055)</option>
-      </select>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <div class="env-selector">
+        <span>Conectado a:</span>
+        <select id="envSelect" onchange="switchEnvironment(this.value)">
+          <option value="local">Local (Felix Server :8056)</option>
+          <option value="homelab">Servidor Homelab (100.96.230.125:8056)</option>
+          <option value="custom">Remoto Personalizado...</option>
+        </select>
+      </div>
+      <span id="systemStatusBadge" class="badge badge-success">ONLINE</span>
     </div>
   </header>
 
   <nav class="nav-tabs">
-    <button class="nav-tab active" onclick="showTab('bots')">Gestor de Bots</button>
-    <button class="nav-tab" onclick="showTab('numbers')">Numeros y Lineas</button>
+    <button class="nav-tab active" onclick="showTab('bots')">Gestor de Bots (ABM)</button>
+    <button class="nav-tab" onclick="showTab('numbers')">Lineas y Numeros</button>
+    <button class="nav-tab" onclick="showTab('db')">Bases de Datos (SQLite)</button>
     <button class="nav-tab" onclick="showTab('apis')">APIs e Inferencia</button>
-    <button class="nav-tab" onclick="showTab('logs')">Logs en Tiempo Real</button>
+    <button class="nav-tab" onclick="showTab('logs')">Auditoria de Logs</button>
     <button class="nav-tab" onclick="showTab('terminal')">Consola Terminal</button>
   </nav>
 
   <main>
     <!-- TAB BOTS -->
     <div id="tab-bots" class="tab-content active">
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Total de Bots</div>
+          <div class="stat-val" id="statTotalBots">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Bots en Linea</div>
+          <div class="stat-val" id="statOnlineBots" style="color: var(--success);">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pedidos Registrados</div>
+          <div class="stat-val" id="statTotalOrders">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Turnos Confirmados</div>
+          <div class="stat-val" id="statTotalAppts">0</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Bots Comerciales y Especializados Registrados</div>
-          <button class="btn btn-primary" onclick="refreshBots()">Actualizar</button>
+          <div class="card-title">Catalogo de Bots Comerciales y Especializados</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" onclick="openCreateBotModal()">+ Crear Nuevo Bot</button>
+            <button class="btn" onclick="refreshBots()">Actualizar</button>
+          </div>
         </div>
         <table>
           <thead>
@@ -300,14 +439,15 @@
               <th>ID</th>
               <th>Nombre</th>
               <th>Tipo</th>
-              <th>Numero Asignado</th>
-              <th>Estado Numero</th>
+              <th>Linea Asignada</th>
+              <th>Estado Linea</th>
               <th>Estado Bot</th>
+              <th>Actividad</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody id="botsTableBody">
-            <tr><td colspan="8">Cargando catalogo de bots...</td></tr>
+            <tr><td colspan="9">Cargando catalogo de bots...</td></tr>
           </tbody>
         </table>
       </div>
@@ -317,15 +457,15 @@
     <div id="tab-numbers" class="tab-content">
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Matriz de Numeros y Deteccion de Colisiones</div>
+          <div class="card-title">Matriz de Lineas Telefonicas y Asignaciones</div>
           <button class="btn btn-primary" onclick="refreshNumbers()">Actualizar</button>
         </div>
         <table>
           <thead>
             <tr>
               <th>Numero Telefonico</th>
-              <th>Bot Asignado</th>
-              <th>Estado en Linea</th>
+              <th>Bot Vinculado</th>
+              <th>Estado de la Linea</th>
               <th>Ultima Conexion</th>
               <th>Acciones</th>
             </tr>
@@ -337,17 +477,78 @@
       </div>
 
       <div class="card">
-        <div class="card-title" style="margin-bottom: 12px;">Asignar o Reasignar Numero a Bot</div>
+        <div class="card-title" style="margin-bottom: 12px;">Vincular o Asignar Linea a un Bot</div>
         <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 200px;">
-            <label style="font-size: 12px; font-weight: 600;">ID del Bot:</label>
-            <input type="text" id="assignBotId" class="input-field" placeholder="ej: piz-01">
+            <label class="form-label">Bot de Destino:</label>
+            <select id="assignBotSelect" class="input-field"></select>
           </div>
           <div style="flex: 1; min-width: 200px;">
-            <label style="font-size: 12px; font-weight: 600;">Numero Telefonico:</label>
+            <label class="form-label">Numero Telefonico (E.164):</label>
             <input type="text" id="assignPhone" class="input-field" placeholder="ej: +5491153402646">
           </div>
-          <button class="btn btn-primary" onclick="assignNumberSubmit()">Asignar Numero</button>
+          <button class="btn btn-primary" onclick="assignNumberSubmit()">Asignar Linea</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB DB -->
+    <div id="tab-db" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Estado de Almacenamiento y Salud de Bases SQLite WAL</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-success" onclick="executeVacuum()">Ejecutar VACUUM y Optimizar</button>
+            <button class="btn btn-primary" onclick="executeBackup()">Crear Backup Ahora</button>
+            <button class="btn" onclick="refreshDB()">Actualizar</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Base de Datos</th>
+              <th>Tamano Base</th>
+              <th>Tamano WAL</th>
+              <th>Integridad</th>
+            </tr>
+          </thead>
+          <tbody id="dbStatusTableBody">
+            <tr><td colspan="4">Consultando bases de datos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 12px;">Tablas y Conteo de Registros</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Base</th>
+                <th>Tabla</th>
+                <th>Filas</th>
+              </tr>
+            </thead>
+            <tbody id="dbTablesTableBody">
+              <tr><td colspan="3">Cargando tablas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 12px;">Copias de Seguridad Disponibles (Backups)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Archivo</th>
+                <th>Tamano</th>
+                <th>Fecha de Creacion</th>
+              </tr>
+            </thead>
+            <tbody id="dbBackupsTableBody">
+              <tr><td colspan="3">Consultando copias...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -356,45 +557,51 @@
     <div id="tab-apis" class="tab-content">
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Proveedores de Inferencia y Endpoints</div>
-          <button class="btn btn-primary" onclick="refreshAPIs()">Probar Latencias</button>
+          <div class="card-title">Configuracion de Motores de Inferencia y LLMs</div>
+          <button class="btn btn-primary" onclick="testAPIConnection()">Probar Latencia en Vivo</button>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Proveedor</th>
-              <th>Modelo Configurado</th>
-              <th>Endpoint API Base</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody id="apisTableBody">
-            <tr>
-              <td>Google Gemini</td>
-              <td>gemini-2.5-flash</td>
-              <td>https://generativelanguage.googleapis.com/v1beta</td>
-              <td><span class="badge badge-success">ACTIVO</span></td>
-            </tr>
-            <tr>
-              <td>Antigravity Tools Proxy</td>
-              <td>gemini-3.8-flash-high</td>
-              <td>http://127.0.0.1:8045/v1</td>
-              <td><span class="badge badge-info">DISPONIBLE</span></td>
-            </tr>
-            <tr>
-              <td>OpenAI Compatible</td>
-              <td>gpt-4o</td>
-              <td>https://api.openai.com/v1</td>
-              <td><span class="badge badge-info">CONFIGURADO</span></td>
-            </tr>
-            <tr>
-              <td>Groq Cloud Whisper</td>
-              <td>whisper-large-v3</td>
-              <td>https://api.groq.com/openai/v1</td>
-              <td><span class="badge badge-success">AUDIO LISTO</span></td>
-            </tr>
-          </tbody>
-        </table>
+        <div id="apiTestResult" style="margin-bottom: 16px; display: none;"></div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Proveedor Principal:</label>
+            <select id="apiProvider" class="input-field">
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI Compatible</option>
+              <option value="antigravity">Antigravity Tools Proxy</option>
+              <option value="groq">Groq Cloud</option>
+              <option value="ollama">Ollama Local</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Modelo Principal:</label>
+            <input type="text" id="apiModel" class="input-field" placeholder="ej: gemini-3.5-flash-lite, gpt-4o">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Endpoint de Inferencia (API Base):</label>
+            <input type="text" id="apiBase" class="input-field" placeholder="ej: http://127.0.0.1:8045/v1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Clave de API (API Key):</label>
+            <input type="password" id="apiKey" class="input-field" placeholder="Dejar vacio para no modificar">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Modelo de Fallback (Respaldo):</label>
+            <input type="text" id="fallbackModel" class="input-field" placeholder="ej: qwen/qwen3.8-27b">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Endpoint de Fallback:</label>
+            <input type="text" id="fallbackBase" class="input-field" placeholder="ej: https://api.groq.com/openai/v1">
+          </div>
+        </div>
+        <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+          <button class="btn btn-primary" onclick="saveAPIConfig()">Guardar Configuracion en Servidor</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom: 12px;">Estado de Credenciales y Sesiones del Sistema</div>
+        <div id="authStatusContainer">Cargando estado...</div>
       </div>
     </div>
 
@@ -402,8 +609,17 @@
     <div id="tab-logs" class="tab-content">
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Flujo de Auditoria y Logs Aislados de Bots</div>
-          <div style="display: flex; gap: 8px;">
+          <div class="card-title">Auditoria de Logs Aislados de Bots</div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select id="logBotFilter" class="input-field" style="width: auto; padding: 4px 8px;" onchange="refreshLogs()">
+              <option value="">Todos los Bots</option>
+            </select>
+            <select id="logLevelFilter" class="input-field" style="width: auto; padding: 4px 8px;" onchange="refreshLogs()">
+              <option value="">Todos los Niveles</option>
+              <option value="INFO">INFO</option>
+              <option value="WARN">WARN</option>
+              <option value="ERROR">ERROR</option>
+            </select>
             <button class="btn" id="btnPauseLogs" onclick="togglePauseLogs()">Pausar</button>
             <button class="btn" onclick="clearLogs()">Limpiar</button>
           </div>
@@ -413,7 +629,7 @@
             <span class="log-ts">[SISTEMA]</span>
             <span class="log-bot">FELIX-CORE</span>
             <span class="log-lvl-info">INFO</span>
-            <span>Canal de logs conectado. Esperando eventos de bots...</span>
+            <span>Canal de auditoria conectado. Esperando eventos...</span>
           </div>
         </div>
       </div>
@@ -424,53 +640,252 @@
       <div class="card">
         <div class="card-title" style="margin-bottom: 12px;">Consola de Comandos CLI Remota / Local</div>
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <input type="text" id="termInput" class="input-field" placeholder="Ingrese comando: status, bots, numbers, db status, apis..." onkeydown="if(event.key==='Enter') executeCommand()">
+          <input type="text" id="termInput" class="input-field" placeholder="Ingrese subcomando: status, bots, numbers, db status, apis..." onkeydown="if(event.key==='Enter') executeCommand()">
           <button class="btn btn-primary" onclick="executeCommand()">Ejecutar</button>
         </div>
-        <div class="log-terminal" id="termOutput" style="height: 350px;">
+        <div class="log-terminal" id="termOutput" style="height: 400px;">
           <div style="color: #94a3b8;">Consola lista. Ingrese 'help' o un subcomando de Felix.</div>
         </div>
       </div>
     </div>
   </main>
 
+  <!-- MODAL CREAR BOT -->
+  <div class="modal-overlay" id="modalCreateBot">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Crear Nuevo Bot (Alta)</div>
+        <button class="btn" onclick="closeModal('modalCreateBot')">X</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Elegir Plantilla Base (Opcional):</label>
+        <select id="createBotTemplate" class="input-field" onchange="applyTemplateToCreate(this.value)">
+          <option value="">Personalizado / En Blanco</option>
+          <option value="pizzeria">Pizzeria / Gastronomia (Toma de pedidos con calculo)</option>
+          <option value="appointments">Peluqueria / Turnos y Citas (Con slots)</option>
+          <option value="calls">Ventas / Coordinacion de Llamadas</option>
+          <option value="faq_support">Soporte Tecnico / FAQ Inteligente</option>
+          <option value="mosiah">MosIAh (Comunidad y Soporte Humano)</option>
+        </select>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">ID Unico (slug):</label>
+          <input type="text" id="createBotId" class="input-field" placeholder="ej: pizzeria-centro">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre Visible:</label>
+          <input type="text" id="createBotName" class="input-field" placeholder="ej: Pizzeria Centro">
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Tipo de Bot:</label>
+          <select id="createBotType" class="input-field">
+            <option value="order_taking">Toma de Pedidos (order_taking)</option>
+            <option value="appointment_booking">Reserva de Turnos (appointment_booking)</option>
+            <option value="faq_support">Soporte y FAQs (faq_support)</option>
+            <option value="custom">Personalizado (custom)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Numero Asignado (Opcional):</label>
+          <input type="text" id="createBotPhone" class="input-field" placeholder="ej: +5491153402646">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripcion:</label>
+        <input type="text" id="createBotDesc" class="input-field" placeholder="Breve descripcion operativa">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Prompt del Sistema (Instrucciones Directas):</label>
+        <textarea id="createBotPrompt" class="input-field" rows="4" placeholder="Instrucciones del bot..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modalCreateBot')">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitCreateBot()">Crear Bot</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL EDITAR BOT -->
+  <div class="modal-overlay" id="modalEditBot">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Modificar Bot: <span id="editBotTitleId"></span></div>
+        <button class="btn" onclick="closeModal('modalEditBot')">X</button>
+      </div>
+      <input type="hidden" id="editBotId">
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Nombre Visible:</label>
+          <input type="text" id="editBotName" class="input-field">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tipo de Bot:</label>
+          <select id="editBotType" class="input-field">
+            <option value="order_taking">Toma de Pedidos (order_taking)</option>
+            <option value="appointment_booking">Reserva de Turnos (appointment_booking)</option>
+            <option value="faq_support">Soporte y FAQs (faq_support)</option>
+            <option value="custom">Personalizado (custom)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Numero Asignado:</label>
+        <input type="text" id="editBotPhone" class="input-field">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripcion:</label>
+        <input type="text" id="editBotDesc" class="input-field">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Prompt del Sistema:</label>
+        <textarea id="editBotPrompt" class="input-field" rows="6"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">
+          <input type="checkbox" id="editBotStrictGrounding"> Grounding Estricto (Restringido unicamente a catalogo/faqs)
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modalEditBot')">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitEditBot()">Guardar Modificaciones</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL REPLICAR BOT -->
+  <div class="modal-overlay" id="modalReplicateBot">
+    <div class="modal" style="max-width: 450px;">
+      <div class="modal-header">
+        <div class="modal-title">Replicar / Clonar Bot</div>
+        <button class="btn" onclick="closeModal('modalReplicateBot')">X</button>
+      </div>
+      <input type="hidden" id="replicateSourceId">
+      <div class="form-group">
+        <label class="form-label">Nuevo ID Unico (slug):</label>
+        <input type="text" id="replicateNewId" class="input-field" placeholder="ej: bot-sucursal-sur">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nuevo Nombre:</label>
+        <input type="text" id="replicateNewName" class="input-field" placeholder="ej: Bot Sucursal Sur">
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modalReplicateBot')">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitReplicateBot()">Clonar Bot</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    let activeApiBase = "";
+    let currentTab = 'bots';
+    let activeApiBase = localStorage.getItem('felix_remote_url') || '';
     let logsPaused = false;
     let eventSource = null;
+    let cachedBots = [];
 
     function showTab(tabName) {
+      currentTab = tabName;
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
-      document.getElementById('tab-' + tabName).classList.add('active');
-      event.target.classList.add('active');
-      if (tabName === 'bots') refreshBots();
-      if (tabName === 'numbers') refreshNumbers();
-      if (tabName === 'logs') connectLogStream();
+      const targetTab = document.getElementById('tab-' + tabName);
+      if (targetTab) targetTab.classList.add('active');
+      if (event && event.target && event.target.classList) {
+        event.target.classList.add('active');
+      }
+
+      refreshCurrentTab();
+    }
+
+    function refreshCurrentTab() {
+      if (currentTab === 'bots') refreshBots();
+      else if (currentTab === 'numbers') refreshNumbers();
+      else if (currentTab === 'db') refreshDB();
+      else if (currentTab === 'apis') refreshAPIs();
+      else if (currentTab === 'logs') { refreshLogs(); connectLogStream(); }
     }
 
     function switchEnvironment(env) {
-      if (env === 'homelab') {
-        activeApiBase = 'http://100.96.230.125:8055';
+      if (env === 'custom') {
+        const cur = activeApiBase || 'http://100.96.230.125:8056';
+        const input = prompt('Ingrese URL del Felix Server remoto (ej: http://100.96.230.125:8056):', cur);
+        if (input) {
+          activeApiBase = input.replace(/\/$/, '');
+          localStorage.setItem('felix_remote_url', activeApiBase);
+          const opt = document.querySelector('#envSelect option[value="custom"]');
+          if (opt) opt.innerText = `Remoto (${activeApiBase})`;
+        } else {
+          document.getElementById('envSelect').value = activeApiBase ? 'custom' : 'local';
+          return;
+        }
+      } else if (env === 'homelab') {
+        activeApiBase = 'http://100.96.230.125:8056';
+        localStorage.setItem('felix_remote_url', activeApiBase);
       } else {
         activeApiBase = '';
+        localStorage.removeItem('felix_remote_url');
       }
-      refreshBots();
-      refreshNumbers();
+      refreshCurrentTab();
+      checkEnvironmentHealth();
     }
 
+    async function checkEnvironmentHealth() {
+      const badge = document.getElementById('systemStatusBadge');
+      try {
+        const res = await fetch((activeApiBase || '') + '/api/v1/db/status');
+        if (res.ok) {
+          badge.className = 'badge badge-success';
+          badge.innerText = activeApiBase ? 'REMOTO ONLINE' : 'LOCAL ONLINE';
+        } else {
+          badge.className = 'badge badge-danger';
+          badge.innerText = activeApiBase ? 'REMOTO ERROR' : 'LOCAL ERROR';
+        }
+      } catch (e) {
+        badge.className = 'badge badge-danger';
+        badge.innerText = activeApiBase ? 'REMOTO INACCESIBLE' : 'LOCAL OFFLINE';
+      }
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    // ABM BOTS
     async function refreshBots() {
       const tbody = document.getElementById('botsTableBody');
       try {
         const res = await fetch(activeApiBase + '/api/v1/bots');
         const data = await res.json();
-        if (!data || data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8">No hay bots registrados en este momento.</td></tr>';
+        cachedBots = data || [];
+
+        // Actualizar stats
+        document.getElementById('statTotalBots').innerText = cachedBots.length;
+        const onlineCount = cachedBots.filter(b => b.status === 'active' || b.is_active).length;
+        document.getElementById('statOnlineBots').innerText = onlineCount;
+        let totalOrders = 0;
+        let totalAppts = 0;
+        cachedBots.forEach(b => {
+          totalOrders += (b.total_orders || 0);
+          totalAppts += (b.total_appointments || 0);
+        });
+        document.getElementById('statTotalOrders').innerText = totalOrders;
+        document.getElementById('statTotalAppts').innerText = totalAppts;
+
+        // Actualizar dropdowns
+        const select = document.getElementById('assignBotSelect');
+        select.innerHTML = cachedBots.map(b => `<option value="${b.id}">${b.name} (${b.id})</option>`).join('');
+        const logFilter = document.getElementById('logBotFilter');
+        logFilter.innerHTML = '<option value="">Todos los Bots</option>' + cachedBots.map(b => `<option value="${b.id}">${b.name} (${b.id})</option>`).join('');
+
+        if (cachedBots.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9">No hay bots registrados. Haga clic en "+ Crear Nuevo Bot".</td></tr>';
           return;
         }
-        tbody.innerHTML = data.map(b => {
+
+        tbody.innerHTML = cachedBots.map(b => {
           const isActive = b.status === 'active' || b.is_active;
-          const statusBadge = isActive ? '<span class="badge badge-success">ONLINE</span>' : '<span class="badge badge-danger">DETENIDO</span>';
+          const statusBadge = isActive ? '<span class="badge badge-success">ONLINE</span>' : '<span class="badge badge-danger">OFFLINE</span>';
           const numBadge = b.phone_number ? (isActive ? '<span class="badge badge-success">ACTIVO</span>' : '<span class="badge badge-warning">STANDBY</span>') : '<span class="badge badge-info">SIN NUMERO</span>';
           const avatarHtml = b.avatar_path ? `<img src="${b.avatar_path}" class="avatar-thumb">` : `<div class="avatar-thumb">${(b.name || 'B').slice(0,2).toUpperCase()}</div>`;
           const toggleAction = isActive ? `toggleBot('${b.id}', false)` : `toggleBot('${b.id}', true)`;
@@ -485,9 +900,13 @@
             <td>${b.phone_number || '-'}</td>
             <td>${numBadge}</td>
             <td>${statusBadge}</td>
+            <td style="font-size: 11px; color: var(--text-muted);">${b.total_orders || 0} ped. | ${b.total_appointments || 0} tur.</td>
             <td>
               <button class="btn ${toggleClass}" onclick="${toggleAction}">${toggleText}</button>
-              <label class="btn" style="cursor: pointer; margin-left: 4px;">
+              <button class="btn" onclick="openEditBotModal('${b.id}')">Editar</button>
+              <button class="btn" onclick="openReplicateModal('${b.id}')">Clonar</button>
+              <button class="btn btn-danger" onclick="deleteBot('${b.id}')">Borrar</button>
+              <label class="btn" style="cursor: pointer; margin-left: 2px;">
                 Foto
                 <input type="file" accept="image/*" style="display:none;" onchange="uploadAvatar('${b.id}', this.files[0])">
               </label>
@@ -495,7 +914,185 @@
           </tr>`;
         }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="8" style="color:red;">Error cargando bots: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="color:red;">Error cargando bots: ${err.message}</td></tr>`;
+      }
+    }
+
+    function openCreateBotModal() {
+      document.getElementById('createBotId').value = '';
+      document.getElementById('createBotName').value = '';
+      document.getElementById('createBotPhone').value = '';
+      document.getElementById('createBotDesc').value = '';
+      document.getElementById('createBotPrompt').value = '';
+      document.getElementById('modalCreateBot').classList.add('active');
+    }
+
+    function applyTemplateToCreate(tmpl) {
+      if (!tmpl) return;
+      if (tmpl === 'pizzeria') {
+        document.getElementById('createBotName').value = 'Pizzeria Artesanal';
+        document.getElementById('createBotType').value = 'order_taking';
+        document.getElementById('createBotDesc').value = 'Atencion y toma de pedidos con calculo de precios y delivery';
+        document.getElementById('createBotPrompt').value = 'Eres el recepcionista de la pizzeria. Toma pedidos segun la carta oficial.';
+      } else if (tmpl === 'appointments') {
+        document.getElementById('createBotName').value = 'Centro de Turnos y Estetica';
+        document.getElementById('createBotType').value = 'appointment_booking';
+        document.getElementById('createBotDesc').value = 'Coordinacion de citas con asignacion de horarios y servicios';
+        document.getElementById('createBotPrompt').value = 'Eres el recepcionista de turnos. Solicita nombre, servicio y horario.';
+      } else if (tmpl === 'faq_support') {
+        document.getElementById('createBotName').value = 'Soporte y Preguntas Frecuentes';
+        document.getElementById('createBotType').value = 'faq_support';
+        document.getElementById('createBotDesc').value = 'Respuestas directas y precisas a preguntas operativas';
+        document.getElementById('createBotPrompt').value = 'Responde consultas segun la base de conocimientos.';
+      }
+    }
+
+    async function submitCreateBot() {
+      const id = document.getElementById('createBotId').value.trim();
+      const name = document.getElementById('createBotName').value.trim();
+      const template = document.getElementById('createBotTemplate').value;
+      const type = document.getElementById('createBotType').value;
+      const phone = document.getElementById('createBotPhone').value.trim();
+      const desc = document.getElementById('createBotDesc').value.trim();
+      const prompt = document.getElementById('createBotPrompt').value.trim();
+
+      if (!id || !name) {
+        alert('ID y Nombre son campos obligatorios');
+        return;
+      }
+
+      try {
+        const payload = {
+          id: id,
+          name: name,
+          template: template,
+          type: type,
+          phone_number: phone,
+          description: desc,
+          system_prompt: prompt
+        };
+        const res = await fetch(activeApiBase + '/api/v1/bots', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Error creando bot: ' + (result.error || 'Fallo'));
+          return;
+        }
+        closeModal('modalCreateBot');
+        refreshBots();
+        refreshNumbers();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function openEditBotModal(botId) {
+      try {
+        const res = await fetch(activeApiBase + `/api/v1/bots/${encodeURIComponent(botId)}`);
+        const data = await res.json();
+        const b = data.bot || data;
+
+        document.getElementById('editBotId').value = b.id;
+        document.getElementById('editBotTitleId').innerText = b.id;
+        document.getElementById('editBotName').value = b.name || '';
+        document.getElementById('editBotType').value = b.type || 'custom';
+        document.getElementById('editBotPhone').value = b.phone_number || '';
+        document.getElementById('editBotDesc').value = b.description || '';
+        document.getElementById('editBotPrompt').value = b.system_prompt || '';
+        document.getElementById('editBotStrictGrounding').checked = !!b.strict_grounding;
+
+        document.getElementById('modalEditBot').classList.add('active');
+      } catch (err) {
+        alert('Error cargando bot para edicion: ' + err.message);
+      }
+    }
+
+    async function submitEditBot() {
+      const botId = document.getElementById('editBotId').value;
+      const name = document.getElementById('editBotName').value.trim();
+      const type = document.getElementById('editBotType').value;
+      const phone = document.getElementById('editBotPhone').value.trim();
+      const desc = document.getElementById('editBotDesc').value.trim();
+      const prompt = document.getElementById('editBotPrompt').value.trim();
+      const strict = document.getElementById('editBotStrictGrounding').checked;
+
+      try {
+        const payload = {
+          name: name,
+          type: type,
+          phone_number: phone,
+          description: desc,
+          system_prompt: prompt,
+          strict_grounding: strict
+        };
+        const res = await fetch(activeApiBase + `/api/v1/bots/${encodeURIComponent(botId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Error actualizando bot: ' + (result.error || 'Fallo'));
+          return;
+        }
+        closeModal('modalEditBot');
+        refreshBots();
+        refreshNumbers();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function deleteBot(botId) {
+      if (!confirm(`Confirma la eliminacion total del bot '${botId}' y sus registros asociados?`)) return;
+      try {
+        const res = await fetch(activeApiBase + `/api/v1/bots/${encodeURIComponent(botId)}`, { method: 'DELETE' });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Error eliminando bot: ' + (result.error || 'Fallo'));
+          return;
+        }
+        refreshBots();
+        refreshNumbers();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    function openReplicateModal(botId) {
+      document.getElementById('replicateSourceId').value = botId;
+      document.getElementById('replicateNewId').value = botId + '-copia';
+      document.getElementById('replicateNewName').value = '';
+      document.getElementById('modalReplicateBot').classList.add('active');
+    }
+
+    async function submitReplicateBot() {
+      const sourceId = document.getElementById('replicateSourceId').value;
+      const newId = document.getElementById('replicateNewId').value.trim();
+      const newName = document.getElementById('replicateNewName').value.trim();
+
+      if (!newId) {
+        alert('El nuevo ID es obligatorio');
+        return;
+      }
+      try {
+        const res = await fetch(activeApiBase + `/api/v1/bots/${encodeURIComponent(sourceId)}/replicate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_id: newId, new_name: newName })
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Error replicando bot: ' + (result.error || 'Fallo'));
+          return;
+        }
+        closeModal('modalReplicateBot');
+        refreshBots();
+      } catch (err) {
+        alert('Error: ' + err.message);
       }
     }
 
@@ -510,7 +1107,7 @@
         refreshBots();
         refreshNumbers();
       } catch (err) {
-        alert('Error de conexion: ' + err.message);
+        alert('Error: ' + err.message);
       }
     }
 
@@ -534,17 +1131,18 @@
       }
     }
 
+    // GESTOR DE NUMEROS
     async function refreshNumbers() {
       const tbody = document.getElementById('numbersTableBody');
       try {
         const res = await fetch(activeApiBase + '/api/v1/numbers');
         const data = await res.json();
         if (!data || data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5">No hay numeros telefonicos registrados.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5">No hay lineas telefonicas registradas.</td></tr>';
           return;
         }
         tbody.innerHTML = data.map(n => {
-          const statusBadge = n.is_active ? '<span class="badge badge-success">ACTIVO</span>' : '<span class="badge badge-warning">INACTIVO (STANDBY)</span>';
+          const statusBadge = n.is_active ? '<span class="badge badge-success">ACTIVO</span>' : '<span class="badge badge-warning">STANDBY</span>';
           return `<tr>
             <td><strong>${n.phone_number}</strong></td>
             <td>${n.bot_name} (<code>${n.bot_id}</code>)</td>
@@ -556,15 +1154,15 @@
           </tr>`;
         }).join('');
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando numeros: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="color:red;">Error: ${err.message}</td></tr>`;
       }
     }
 
     async function assignNumberSubmit() {
-      const botId = document.getElementById('assignBotId').value.trim();
+      const botId = document.getElementById('assignBotSelect').value;
       const phone = document.getElementById('assignPhone').value.trim();
       if (!botId || !phone) {
-        alert('Debe completar el ID de bot y el numero telefonico');
+        alert('Seleccione un bot e ingrese un numero');
         return;
       }
       try {
@@ -577,13 +1175,12 @@
         if (!res.ok || result.error) {
           alert('Fallo de asignacion: ' + (result.error || 'Error'));
         } else {
-          document.getElementById('assignBotId').value = '';
           document.getElementById('assignPhone').value = '';
           refreshBots();
           refreshNumbers();
         }
       } catch (err) {
-        alert('Error de comunicacion: ' + err.message);
+        alert('Error: ' + err.message);
       }
     }
 
@@ -602,9 +1199,162 @@
       }
     }
 
+    // GESTOR DE BASE DE DATOS
+    async function refreshDB() {
+      try {
+        // Status
+        const res = await fetch(activeApiBase + '/api/v1/db/status');
+        const data = await res.json();
+        const tbody = document.getElementById('dbStatusTableBody');
+        tbody.innerHTML = (data || []).map(d => `
+          <tr>
+            <td><strong>${d.name}</strong></td>
+            <td>${d.size_kb}</td>
+            <td>${d.wal_size_kb}</td>
+            <td><span class="badge ${d.integrity === 'OK' ? 'badge-success' : 'badge-danger'}">${d.integrity}</span></td>
+          </tr>
+        `).join('');
+
+        // Tables
+        const tRes = await fetch(activeApiBase + '/api/v1/db/tables');
+        const tData = await tRes.json();
+        const tBody = document.getElementById('dbTablesTableBody');
+        tBody.innerHTML = (tData || []).map(t => `
+          <tr>
+            <td><code>${t.database}</code></td>
+            <td>${t.table}</td>
+            <td><strong>${t.rows}</strong></td>
+          </tr>
+        `).join('');
+
+        // Backups
+        const bRes = await fetch(activeApiBase + '/api/v1/db/backups');
+        const bData = await bRes.json();
+        const bBody = document.getElementById('dbBackupsTableBody');
+        if (!bData || bData.length === 0) {
+          bBody.innerHTML = '<tr><td colspan="3">No se han generado copias de respaldo todavia.</td></tr>';
+        } else {
+          bBody.innerHTML = bData.map(b => `
+            <tr>
+              <td><code>${b.filename}</code></td>
+              <td>${b.size_kb}</td>
+              <td>${new Date(b.mod_time).toLocaleString()}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (err) {
+        console.error('Error cargando estado DB:', err);
+      }
+    }
+
+    async function executeVacuum() {
+      if (!confirm('Iniciar compactacion y optimizacion VACUUM en todas las bases SQLite?')) return;
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/db/vacuum', { method: 'POST' });
+        const data = await res.json();
+        alert('Optimizacion finalizada con exito.');
+        refreshDB();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function executeBackup() {
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/db/backup', { method: 'POST' });
+        const data = await res.json();
+        alert(`Backups generados correctamente (${(data.backups_created || []).length} archivos).`);
+        refreshDB();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // GESTOR DE APIS
+    async function refreshAPIs() {
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/apis');
+        const data = await res.json();
+
+        if (data.provider) document.getElementById('apiProvider').value = data.provider;
+        if (data.model) document.getElementById('apiModel').value = data.model;
+        if (data.api_base) document.getElementById('apiBase').value = data.api_base;
+        if (data.fallback_model) document.getElementById('fallbackModel').value = data.fallback_model;
+        if (data.fallback_api_base) document.getElementById('fallbackBase').value = data.fallback_api_base;
+
+        const authRes = await fetch(activeApiBase + '/api/v1/auth/status');
+        const authData = await authRes.json();
+        const container = document.getElementById('authStatusContainer');
+        const wa = authData.whatsapp || {};
+        container.innerHTML = `
+          <div style="font-size: 13px; line-height: 1.8;">
+            <div>WhatsApp E2E: <strong>${wa.registered ? '<span class="badge badge-success">VINCULADO</span>' : '<span class="badge badge-warning">NO VINCULADO</span>'}</strong> ${wa.jid ? '(' + wa.jid + ')' : ''}</div>
+            <div>Groq Whisper: <strong>${authData.groq ? '<span class="badge badge-success">CONFIGURADO</span>' : '<span class="badge badge-danger">SIN CLAVE</span>'}</strong></div>
+            <div>OpenAI API: <strong>${authData.openai ? '<span class="badge badge-success">CONFIGURADO</span>' : '<span class="badge badge-danger">SIN CLAVE</span>'}</strong></div>
+            <div>Gemini API: <strong>${authData.gemini ? '<span class="badge badge-success">CONFIGURADO</span>' : '<span class="badge badge-danger">SIN CLAVE</span>'}</strong></div>
+          </div>
+        `;
+      } catch (err) {
+        console.error('Error cargando APIs:', err);
+      }
+    }
+
+    async function saveAPIConfig() {
+      const payload = {
+        provider: document.getElementById('apiProvider').value,
+        model: document.getElementById('apiModel').value.trim(),
+        api_base: document.getElementById('apiBase').value.trim(),
+        api_key: document.getElementById('apiKey').value.trim(),
+        fallback_model: document.getElementById('fallbackModel').value.trim(),
+        fallback_api_base: document.getElementById('fallbackBase').value.trim()
+      };
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/apis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.ok) {
+          alert('Configuracion de inferencia guardada exitosamente en el servidor.');
+          document.getElementById('apiKey').value = '';
+          refreshAPIs();
+        } else {
+          alert('Error: ' + (result.error || 'Fallo'));
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function testAPIConnection() {
+      const resultDiv = document.getElementById('apiTestResult');
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = '<span style="color:var(--text-muted);">Probando latencia contra el endpoint...</span>';
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/apis/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: document.getElementById('apiBase').value.trim() })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          resultDiv.innerHTML = `<span class="badge badge-success">HTTP ${data.status_code || 200}</span> Conexion verificada en <strong>${data.latency_ms} ms</strong> contra <code>${data.target}</code>`;
+        } else {
+          resultDiv.innerHTML = `<span class="badge badge-warning">LATENCIA ${data.latency_ms} ms</span> Advertencia: ${data.error || 'No responde'} contra <code>${data.target}</code>`;
+        }
+      } catch (err) {
+        resultDiv.innerHTML = `<span class="badge badge-danger">ERROR</span> Fallo de conexion: ${err.message}`;
+      }
+    }
+
+    // LOGS EN VIVO
     function connectLogStream() {
-      if (eventSource) return;
-      eventSource = new EventSource(activeApiBase + '/api/v1/logs/stream');
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      eventSource = new EventSource((activeApiBase || '') + '/api/v1/logs/stream');
       eventSource.onmessage = function(e) {
         if (logsPaused) return;
         try {
@@ -612,9 +1362,41 @@
           appendLogLine(item);
         } catch (err) {}
       };
+      eventSource.onerror = function() {
+        // Fallback silencioso sin interrupciones
+      };
+    }
+
+    async function refreshLogs() {
+      const botId = document.getElementById('logBotFilter').value;
+      const level = document.getElementById('logLevelFilter').value;
+      try {
+        const params = new URLSearchParams();
+        if (botId) params.append('bot_id', botId);
+        if (level) params.append('level', level);
+
+        const res = await fetch(activeApiBase + '/api/v1/logs/bots?' + params.toString());
+        const data = await res.json();
+        const term = document.getElementById('logTerminal');
+        term.innerHTML = '';
+        if (!data || data.length === 0) {
+          term.innerHTML = '<div style="color:#64748b;">No hay registros de auditoria con los filtros seleccionados.</div>';
+          return;
+        }
+        for (let i = data.length - 1; i >= 0; i--) {
+          appendLogLine(data[i]);
+        }
+      } catch (err) {
+        console.error('Error cargando logs:', err);
+      }
     }
 
     function appendLogLine(item) {
+      const botFilter = document.getElementById('logBotFilter').value;
+      const lvlFilter = document.getElementById('logLevelFilter').value;
+      if (botFilter && item.bot_id !== botFilter) return;
+      if (lvlFilter && (item.level || '').toUpperCase() !== lvlFilter.toUpperCase()) return;
+
       const term = document.getElementById('logTerminal');
       const div = document.createElement('div');
       div.className = 'log-line';
@@ -622,7 +1404,7 @@
       div.innerHTML = `
         <span class="log-ts">${new Date(item.created_at || Date.now()).toLocaleTimeString()}</span>
         <span class="log-bot">${item.bot_name || item.bot_id || 'BOT'}</span>
-        <span class="${lvlClass}">${item.level || 'INFO'}</span>
+        <span class="${lvlClass}">[${item.level || 'INFO'}]</span>
         <span>${item.message} ${item.latency_ms ? '(' + item.latency_ms + 'ms)' : ''}</span>
       `;
       term.appendChild(div);
@@ -638,6 +1420,7 @@
       document.getElementById('logTerminal').innerHTML = '';
     }
 
+    // TERMINAL
     async function executeCommand() {
       const input = document.getElementById('termInput');
       const val = input.value.trim();
@@ -653,7 +1436,7 @@
           body: JSON.stringify({ command: val })
         });
         const out = await res.text();
-        term.innerHTML += `<div style="color:#e2e8f0; margin-bottom: 8px;">${out}</div>`;
+        term.innerHTML += `<div style="color:#e2e8f0; margin-bottom: 8px; white-space: pre-wrap;">${out}</div>`;
       } catch (err) {
         term.innerHTML += `<div style="color:#f87171;">Error: ${err.message}</div>`;
       }
@@ -661,7 +1444,18 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      if (activeApiBase) {
+        const sel = document.getElementById('envSelect');
+        if (activeApiBase.includes('100.96.230.125')) {
+          sel.value = 'homelab';
+        } else {
+          sel.value = 'custom';
+          const opt = document.querySelector('#envSelect option[value="custom"]');
+          if (opt) opt.innerText = `Remoto (${activeApiBase})`;
+        }
+      }
       refreshBots();
+      checkEnvironmentHealth();
     });
   </script>
 </body>
