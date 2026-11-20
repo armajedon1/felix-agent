@@ -141,9 +141,11 @@ func main() {
 	if len(os.Args) > 1 && cli.IsCLICommand(os.Args[1]) {
 		cfgPath := "config.json"
 		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-			systemPath := "/home/matias/felix-go/config.json"
-			if _, sErr := os.Stat(systemPath); sErr == nil {
-				cfgPath = systemPath
+			for _, candidate := range []string{"/home/matias/felix-server/config.json", "/home/matias/felix-go/config.json"} {
+				if _, sErr := os.Stat(candidate); sErr == nil {
+					cfgPath = candidate
+					break
+				}
 			}
 		}
 		os.Exit(cli.RunCLI(os.Args[1:], cfgPath))

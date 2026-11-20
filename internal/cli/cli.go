@@ -346,6 +346,8 @@ func CmdLogs(args []string, configPath string) int {
 	}
 
 	logFiles := []string{
+		"/home/matias/.pm2/logs/felix-server-out.log",
+		"/home/matias/.pm2/logs/felix-server-error.log",
 		"/home/matias/.pm2/logs/felix-go-out-9.log",
 		"/home/matias/.pm2/logs/felix-go-error-9.log",
 	}
@@ -365,14 +367,17 @@ func CmdLogs(args []string, configPath string) int {
 	}
 
 	if targetPath == "" {
-		matches, _ := filepath.Glob("/home/matias/.pm2/logs/felix-go*.log")
+		matches, _ := filepath.Glob("/home/matias/.pm2/logs/felix-server*.log")
+		if len(matches) == 0 {
+			matches, _ = filepath.Glob("/home/matias/.pm2/logs/felix-go*.log")
+		}
 		if len(matches) > 0 {
 			targetPath = matches[0]
 		}
 	}
 
 	if targetPath == "" {
-		fmt.Println("No se encontraron archivos de logs activos para felix-go en ~/.pm2/logs/")
+		fmt.Println("No se encontraron archivos de logs activos para felix-server en ~/.pm2/logs/")
 		return 1
 	}
 
@@ -676,7 +681,7 @@ func CmdConfig(args []string, configPath string) int {
 			fmt.Printf("Error guardando configuracion: %v\n", err)
 			return 1
 		}
-		fmt.Printf("Configuracion actualizada: '%s' = '%s'. Reinicia felix (pm2 restart felix-go) para aplicar cambios.\n", key, valStr)
+		fmt.Printf("Configuracion actualizada: '%s' = '%s'. Reinicia felix (pm2 restart felix-server) para aplicar cambios.\n", key, valStr)
 
 	default:
 		fmt.Println("Acciones de configuracion disponibles: show, get, set, path")
