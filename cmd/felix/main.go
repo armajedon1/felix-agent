@@ -137,20 +137,43 @@ func main() {
 		return
 	}
 
-	// Modo CLI nativo: status, logs, conv, config, bots, chat, version, help
-	if len(os.Args) > 1 && cli.IsCLICommand(os.Args[1]) {
+	// Detectar si se invoco modo servidor daemon 24/7 explicitamente
+	isServerMode := false
+	serverArgs := []string{}
+	for i := 1; i < len(os.Args); i++ {
+		arg := strings.ToLower(os.Args[i])
+		if arg == "server" || arg == "daemon" || arg == "--server" || arg == "-s" {
+			isServerMode = true
+		} else {
+			serverArgs = append(serverArgs, os.Args[i])
+		}
+	}
+
+	// Si NO es modo servidor explicito, la ejecucion va directamente al CLI interactivo / Desktop / Web
+	if !isServerMode {
 		cfgPath := "config.json"
 		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-			for _, candidate := range []string{"/home/matias/felix-server/config.json", "/home/matias/felix-go/config.json"} {
+			for _, candidate := range []string{
+				"/home/matias/felix-server/config.json",
+				"/home/matias/felix-go/config.json",
+				filepath.Join(os.Getenv("HOME"), ".config/felix/config.json"),
+			} {
 				if _, sErr := os.Stat(candidate); sErr == nil {
 					cfgPath = candidate
 					break
 				}
 			}
 		}
-		os.Exit(cli.RunCLI(os.Args[1:], cfgPath))
+
+		args := []string{}
+		if len(os.Args) > 1 {
+			args = os.Args[1:]
+		}
+		os.Exit(cli.RunCLI(args, cfgPath))
 	}
 
+	// Reconfigurar argumentos para el modo servidor daemon
+	os.Args = append([]string{os.Args[0]}, serverArgs...)
 	configPath := flag.String("config", "config.json", "Ruta al archivo config.json")
 	cliPrompt := flag.String("cli", "", "Ejecutar una peticion interactiva directa por linea de comandos y mostrar el bucle de herramientas")
 	setupFlag := flag.Bool("setup", false, "Iniciar el asistente interactivo de configuracion")
@@ -161,7 +184,7 @@ func main() {
 		return
 	}
 
-	log.Println("Iniciando Felix (Agente Autonomo de Ingenieria y DevOps)...")
+	log.Println("Iniciando Felix Server en modo daemon 24/7...")
 
 	// 1. Cargar configuracion
 	cfg, err := config.LoadConfig(*configPath)

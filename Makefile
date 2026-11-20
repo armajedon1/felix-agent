@@ -1,4 +1,4 @@
-.PHONY: all build build-all build-linux-amd64 build-linux-arm64 build-windows-amd64 run test setup clean
+.PHONY: all build build-all build-linux-amd64 build-linux-arm64 build-windows-amd64 run desktop web server setup test install clean
 
 all: build
 
@@ -20,8 +20,22 @@ build-windows-amd64:
 
 build-all: build build-linux-amd64 build-linux-arm64 build-windows-amd64
 
+install: build
+	mkdir -p $(HOME)/.local/bin
+	install -m 755 bin/felix $(HOME)/.local/bin/felix
+	@echo "Felix instalado exitosamente en $(HOME)/.local/bin/felix"
+
 run: build
 	./bin/felix
+
+desktop: build
+	./bin/felix desktop
+
+web: build
+	./bin/felix web
+
+server: build
+	./bin/felix server
 
 setup: build
 	./bin/felix setup

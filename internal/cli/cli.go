@@ -56,10 +56,111 @@ func PrintBanner() {
 	fmt.Println("================================================================================")
 }
 
+func printQuickMenu() {
+	deviceMode := "Estacion de Trabajo (PC)"
+	if _, err := os.Stat("/etc/rpi-issue"); err == nil {
+		deviceMode = "Servidor Linux / Homelab"
+	}
+	fmt.Printf(" Dispositivo detectado: %s (%s/%s)\n", deviceMode, runtime.GOOS, runtime.GOARCH)
+	fmt.Println("================================================================================")
+	fmt.Println(" Opciones disponibles:")
+	fmt.Println("   [1] Abrir Ventana de Escritorio (Desktop GUI ABM)")
+	fmt.Println("   [2] Iniciar Consola Web Embebida (http://localhost:8056)")
+	fmt.Println("   [3] Iniciar Chat Interactivo CLI (Terminal con herramientas)")
+	fmt.Println("   [4] Diagnostico de Estado y Salud (felix status)")
+	fmt.Println("   [5] Administrar Catalogo de Bots (felix bots)")
+	fmt.Println("   [6] Matriz de Lineas Telefonicas (felix numbers)")
+	fmt.Println("   [7] Administrar Bases de Datos SQLite (felix db)")
+	fmt.Println("   [8] Catalogo de APIs e Inferencia (felix apis)")
+	fmt.Println("   [9] Auditoria y Logs de Bots (felix logs)")
+	fmt.Println("   [0] Salir")
+	fmt.Println("--------------------------------------------------------------------------------")
+	fmt.Print(" Seleccione una opcion [0-9] o ingrese un comando directo (o 'help'): ")
+}
+
+func RunInteractiveMenu(configPath string) int {
+	fileInfo, err := os.Stdin.Stat()
+	if err != nil || (fileInfo.Mode()&os.ModeCharDevice) == 0 {
+		return 0
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			fmt.Print("felix> ")
+			continue
+		}
+		if line == "0" || line == "salir" || line == "exit" || line == "quit" {
+			fmt.Println("Saliendo de Felix.")
+			return 0
+		}
+
+		parts := strings.Fields(line)
+		first := strings.ToLower(parts[0])
+
+		switch first {
+		case "1", "desktop", "gui":
+			return CmdDesktop(parts[1:], configPath)
+		case "2", "web":
+			return CmdWeb(parts[1:], configPath)
+		case "3", "cli", "chat":
+			return CmdChat(parts[1:], configPath)
+		case "4", "status":
+			CmdStatus(configPath)
+		case "5", "bots", "bot":
+			sub := []string{"list"}
+			if len(parts) > 1 {
+				sub = parts[1:]
+			}
+			CmdBots(sub, configPath)
+		case "6", "numbers", "number":
+			sub := []string{"list"}
+			if len(parts) > 1 {
+				sub = parts[1:]
+			}
+			CmdNumbers(sub, configPath)
+		case "7", "db":
+			sub := []string{"status"}
+			if len(parts) > 1 {
+				sub = parts[1:]
+			}
+			CmdDB(sub, configPath)
+		case "8", "apis", "api":
+			sub := []string{"list"}
+			if len(parts) > 1 {
+				sub = parts[1:]
+			}
+			CmdAPIs(sub, configPath)
+		case "9", "logs":
+			sub := []string{"bots"}
+			if len(parts) > 1 {
+				sub = parts[1:]
+			}
+			CmdLogs(sub, configPath)
+		case "help", "-h", "--help", "?":
+			PrintHelp()
+		case "clear":
+			fmt.Print("\033[H\033[2J")
+			PrintBanner()
+			printQuickMenu()
+		default:
+			RunCLI(parts, configPath)
+		}
+		fmt.Print("\nfelix> ")
+	}
+	return 0
+}
+
 func RunCLI(args []string, configPath string) int {
 	if len(args) == 0 {
-		PrintHelp()
-		return 0
+		PrintBanner()
+		printQuickMenu()
+		return RunInteractiveMenu(configPath)
 	}
 
 	cmd := strings.ToLower(args[0])
@@ -1293,6 +1394,7 @@ func CmdWeb(args []string, configPath string) int {
 		return 1
 	}
 
+	_ = os.MkdirAll(cfg.DataDir, 0755)
 	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
 	store, err := botfactory.NewStorage(botsDBPath)
 	if err != nil {
@@ -1330,6 +1432,7 @@ func CmdDesktop(args []string, configPath string) int {
 		return 1
 	}
 
+	_ = os.MkdirAll(cfg.DataDir, 0755)
 	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
 	store, err := botfactory.NewStorage(botsDBPath)
 	if err != nil {

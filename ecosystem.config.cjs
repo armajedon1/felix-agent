@@ -3,6 +3,7 @@ module.exports = {
     {
       name: 'felix',
       script: './bin/felix',
+      args: 'server',
       cwd: __dirname,
       interpreter: 'none',
       instances: 1,

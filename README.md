@@ -62,19 +62,61 @@ sudo apt update && sudo apt install -y golang ffmpeg build-essential git
 
 ---
 
-## Inicio Rápido
+## Inicio Rápido y Modos de Uso
 
-### 1. Clonar el Repositorio
+### 1. Clonar e Instalar
 ```bash
 git clone https://github.com/m-leiva/felix-agent.git
 cd felix-agent
-```
-
-### 2. Ejecutar el Instalador
-```bash
 ./install.sh
 ```
-El instalador verificará el entorno, generará la estructura de carpetas (`bin/`, `data/`, `workspace/`), creará `config.json` a partir de la plantilla y compilará el binario `bin/felix`.
+El script compila el binario e instala `felix` automáticamente en `~/.local/bin/felix` (disponible globalmente en la terminal) y registra el lanzador de escritorio en entornos Linux con interfaz gráfica.
+
+### 2. Modos de Uso: Estación de Trabajo (PC) vs Servidor (Server Daemon)
+
+#### Modo PC / Estación de Trabajo
+* **Menú Interactivo y Presentación ASCII:**
+  ```bash
+  felix
+  ```
+  Al ejecutarse sin argumentos en una terminal, despliega el arte ASCII oficial, detecta el entorno y ofrece un menú interactivo rápido para acceder a todas las herramientas.
+* **Ventana de Escritorio (Desktop GUI):**
+  ```bash
+  felix desktop
+  ```
+  Abre una ventana de aplicación nativa conectada a la instancia local o a un servidor remoto, con paneles visuales completos para el alta, baja y modificación (ABM) de bots, gestión de números, bases SQLite y streaming de logs.
+* **Consola Web Embebida:**
+  ```bash
+  felix web
+  ```
+  Inicia la consola web embebida ultraligera en `http://localhost:8056`.
+* **Consola de Chat Interactivo CLI:**
+  ```bash
+  felix cli
+  ```
+  Abre una sesión de ingeniería y chat interactivo en terminal con el arnés nativo de herramientas.
+* **Gestión Directa por Subcomandos CLI:**
+  ```bash
+  felix bots list
+  felix bots start <bot_id>
+  felix bots stop <bot_id>
+  felix numbers list
+  felix numbers assign <bot_id> <numero>
+  felix db status
+  felix db vacuum
+  felix apis test
+  felix logs bots
+  ```
+
+#### Modo Servidor (Servicio 24/7)
+Para correr Félix como demonio desatendido continuo con canales WhatsApp/Telegram, cron scheduler y servidor de telemetría:
+```bash
+felix server
+```
+O con PM2:
+```bash
+pm2 start ecosystem.config.cjs
+```
 
 ---
 
