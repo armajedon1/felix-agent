@@ -61,9 +61,32 @@ type BotSpec struct {
 	Port              int               `json:"port,omitempty"`
 	WebhookURL        string            `json:"webhook_url,omitempty"`
 	ReplicationSource string            `json:"replication_source,omitempty"`
+	PhoneNumber       string            `json:"phone_number,omitempty"`
+	AvatarPath        string            `json:"avatar_path,omitempty"`
+	IsActive          bool              `json:"is_active"`
 	Status            string            `json:"status"`
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
+}
+
+type BotNumberInfo struct {
+	PhoneNumber string    `json:"phone_number"`
+	BotID       string    `json:"bot_id"`
+	BotName     string    `json:"bot_name"`
+	IsActive    bool      `json:"is_active"`
+	LastSeen    time.Time `json:"last_seen,omitempty"`
+}
+
+type BotLogEntry struct {
+	ID           int64     `json:"id"`
+	BotID        string    `json:"bot_id"`
+	BotName      string    `json:"bot_name,omitempty"`
+	Level        string    `json:"level"`
+	Direction    string    `json:"direction,omitempty"`
+	SenderNumber string    `json:"sender_number,omitempty"`
+	Message      string    `json:"message"`
+	LatencyMs    int64     `json:"latency_ms,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type OrderItem struct {

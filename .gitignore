@@ -14,6 +14,8 @@ data/downloads/*
 !data/downloads/.gitkeep
 data/backups/*
 !data/backups/.gitkeep
+data/avatars/*
+!data/avatars/.gitkeep
 workspace/reports/*
 !workspace/reports/.gitkeep
 workspace/memory/*

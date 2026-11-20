@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Felix Agent - Consola de Administracion</title>
+  <style>
+    :root {
+      --bg-body: #f8fafc;
+      --bg-surface: #ffffff;
+      --border-color: #cbd5e1;
+      --border-subtle: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-body);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    header {
+      background: var(--bg-surface);
+      border-bottom: 2px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-title {
+      font-weight: 800;
+      font-size: 18px;
+      letter-spacing: -0.5px;
+      color: var(--text-main);
+    }
+
+    .badge-sovereignty {
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .env-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f1f5f9;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
+    .env-selector select {
+      background: transparent;
+      border: none;
+      font-weight: 600;
+      color: var(--text-main);
+      outline: none;
+      cursor: pointer;
+    }
+
+    .nav-tabs {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      padding: 0 24px;
+      gap: 16px;
+    }
+
+    .nav-tab {
+      padding: 12px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .nav-tab:hover { color: var(--primary); }
+    .nav-tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    main {
+      padding: 24px;
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    th {
+      background: #f8fafc;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .badge-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+    .badge-warning { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+    .badge-info { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+
+    .btn {
+      display: inline-block;
+      background: #f1f5f9;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .btn:hover { background: #e2e8f0; }
+    .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: #ef4444; color: #fff; border-color: #dc2626; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-success { background: #16a34a; color: #fff; border-color: #15803d; }
+    .btn-success:hover { background: #15803d; }
+
+    .avatar-thumb {
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      object-fit: cover;
+      border: 1px solid var(--border-subtle);
+      background: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .log-terminal {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 16px;
+      border-radius: 6px;
+      height: 480px;
+      overflow-y: auto;
+      border: 1px solid #1e293b;
+    }
+
+    .log-line {
+      margin-bottom: 4px;
+      display: flex;
+      gap: 10px;
+      word-break: break-all;
+    }
+
+    .log-ts { color: #64748b; min-width: 140px; }
+    .log-bot { color: #38bdf8; font-weight: 600; min-width: 90px; }
+    .log-lvl-info { color: #4ade80; }
+    .log-lvl-warn { color: #fbbf24; }
+    .log-lvl-error { color: #f87171; font-weight: 700; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 13px;
+      margin-top: 4px;
+      outline: none;
+    }
+
+    .input-field:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-title">FELIX AGENT // PANEL DE CONTROL</div>
+      <div class="badge-sovereignty">[ARG] SOBERANIA TECNOLOGICA</div>
+    </div>
+    <div class="env-selector">
+      <span>Entorno:</span>
+      <select id="envSelect" onchange="switchEnvironment(this.value)">
+        <option value="local">Local (Workstation PC :8056)</option>
+        <option value="homelab">Servidor Homelab (100.96.230.125:8055)</option>
+      </select>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" onclick="showTab('bots')">Gestor de Bots</button>
+    <button class="nav-tab" onclick="showTab('numbers')">Numeros y Lineas</button>
+    <button class="nav-tab" onclick="showTab('apis')">APIs e Inferencia</button>
+    <button class="nav-tab" onclick="showTab('logs')">Logs en Tiempo Real</button>
+    <button class="nav-tab" onclick="showTab('terminal')">Consola Terminal</button>
+  </nav>
+
+  <main>
+    <!-- TAB BOTS -->
+    <div id="tab-bots" class="tab-content active">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Bots Comerciales y Especializados Registrados</div>
+          <button class="btn btn-primary" onclick="refreshBots()">Actualizar</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Avatar</th>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th>Numero Asignado</th>
+              <th>Estado Numero</th>
+              <th>Estado Bot</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="botsTableBody">
+            <tr><td colspan="8">Cargando catalogo de bots...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB NUMEROS -->
+    <div id="tab-numbers" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Matriz de Numeros y Deteccion de Colisiones</div>
+          <button class="btn btn-primary" onclick="refreshNumbers()">Actualizar</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Numero Telefonico</th>
+              <th>Bot Asignado</th>
+              <th>Estado en Linea</th>
+              <th>Ultima Conexion</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="numbersTableBody">
+            <tr><td colspan="5">Cargando numeros...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom: 12px;">Asignar o Reasignar Numero a Bot</div>
+        <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 200px;">
+            <label style="font-size: 12px; font-weight: 600;">ID del Bot:</label>
+            <input type="text" id="assignBotId" class="input-field" placeholder="ej: piz-01">
+          </div>
+          <div style="flex: 1; min-width: 200px;">
+            <label style="font-size: 12px; font-weight: 600;">Numero Telefonico:</label>
+            <input type="text" id="assignPhone" class="input-field" placeholder="ej: +5491153402646">
+          </div>
+          <button class="btn btn-primary" onclick="assignNumberSubmit()">Asignar Numero</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB APIS -->
+    <div id="tab-apis" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Proveedores de Inferencia y Endpoints</div>
+          <button class="btn btn-primary" onclick="refreshAPIs()">Probar Latencias</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Proveedor</th>
+              <th>Modelo Configurado</th>
+              <th>Endpoint API Base</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="apisTableBody">
+            <tr>
+              <td>Google Gemini</td>
+              <td>gemini-2.5-flash</td>
+              <td>https://generativelanguage.googleapis.com/v1beta</td>
+              <td><span class="badge badge-success">ACTIVO</span></td>
+            </tr>
+            <tr>
+              <td>Antigravity Tools Proxy</td>
+              <td>gemini-3.8-flash-high</td>
+              <td>http://127.0.0.1:8045/v1</td>
+              <td><span class="badge badge-info">DISPONIBLE</span></td>
+            </tr>
+            <tr>
+              <td>OpenAI Compatible</td>
+              <td>gpt-4o</td>
+              <td>https://api.openai.com/v1</td>
+              <td><span class="badge badge-info">CONFIGURADO</span></td>
+            </tr>
+            <tr>
+              <td>Groq Cloud Whisper</td>
+              <td>whisper-large-v3</td>
+              <td>https://api.groq.com/openai/v1</td>
+              <td><span class="badge badge-success">AUDIO LISTO</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB LOGS -->
+    <div id="tab-logs" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Flujo de Auditoria y Logs Aislados de Bots</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn" id="btnPauseLogs" onclick="togglePauseLogs()">Pausar</button>
+            <button class="btn" onclick="clearLogs()">Limpiar</button>
+          </div>
+        </div>
+        <div class="log-terminal" id="logTerminal">
+          <div class="log-line">
+            <span class="log-ts">[SISTEMA]</span>
+            <span class="log-bot">FELIX-CORE</span>
+            <span class="log-lvl-info">INFO</span>
+            <span>Canal de logs conectado. Esperando eventos de bots...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB TERMINAL -->
+    <div id="tab-terminal" class="tab-content">
+      <div class="card">
+        <div class="card-title" style="margin-bottom: 12px;">Consola de Comandos CLI Remota / Local</div>
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <input type="text" id="termInput" class="input-field" placeholder="Ingrese comando: status, bots, numbers, db status, apis..." onkeydown="if(event.key==='Enter') executeCommand()">
+          <button class="btn btn-primary" onclick="executeCommand()">Ejecutar</button>
+        </div>
+        <div class="log-terminal" id="termOutput" style="height: 350px;">
+          <div style="color: #94a3b8;">Consola lista. Ingrese 'help' o un subcomando de Felix.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let activeApiBase = "";
+    let logsPaused = false;
+    let eventSource = null;
+
+    function showTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+      if (tabName === 'bots') refreshBots();
+      if (tabName === 'numbers') refreshNumbers();
+      if (tabName === 'logs') connectLogStream();
+    }
+
+    function switchEnvironment(env) {
+      if (env === 'homelab') {
+        activeApiBase = 'http://100.96.230.125:8055';
+      } else {
+        activeApiBase = '';
+      }
+      refreshBots();
+      refreshNumbers();
+    }
+
+    async function refreshBots() {
+      const tbody = document.getElementById('botsTableBody');
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/bots');
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8">No hay bots registrados en este momento.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map(b => {
+          const isActive = b.status === 'active' || b.is_active;
+          const statusBadge = isActive ? '<span class="badge badge-success">ONLINE</span>' : '<span class="badge badge-danger">DETENIDO</span>';
+          const numBadge = b.phone_number ? (isActive ? '<span class="badge badge-success">ACTIVO</span>' : '<span class="badge badge-warning">STANDBY</span>') : '<span class="badge badge-info">SIN NUMERO</span>';
+          const avatarHtml = b.avatar_path ? `<img src="${b.avatar_path}" class="avatar-thumb">` : `<div class="avatar-thumb">${(b.name || 'B').slice(0,2).toUpperCase()}</div>`;
+          const toggleAction = isActive ? `toggleBot('${b.id}', false)` : `toggleBot('${b.id}', true)`;
+          const toggleText = isActive ? 'Detener' : 'Activar';
+          const toggleClass = isActive ? 'btn-danger' : 'btn-success';
+
+          return `<tr>
+            <td>${avatarHtml}</td>
+            <td><strong>${b.id}</strong></td>
+            <td>${b.name}</td>
+            <td><code>${b.type}</code></td>
+            <td>${b.phone_number || '-'}</td>
+            <td>${numBadge}</td>
+            <td>${statusBadge}</td>
+            <td>
+              <button class="btn ${toggleClass}" onclick="${toggleAction}">${toggleText}</button>
+              <label class="btn" style="cursor: pointer; margin-left: 4px;">
+                Foto
+                <input type="file" accept="image/*" style="display:none;" onchange="uploadAvatar('${b.id}', this.files[0])">
+              </label>
+            </td>
+          </tr>`;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" style="color:red;">Error cargando bots: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function toggleBot(botId, activate) {
+      try {
+        const endpoint = activeApiBase + `/api/v1/bots/${encodeURIComponent(botId)}/${activate ? 'start' : 'stop'}`;
+        const res = await fetch(endpoint, { method: 'POST' });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Error: ' + (result.error || 'Fallo al cambiar estado'));
+        }
+        refreshBots();
+        refreshNumbers();
+      } catch (err) {
+        alert('Error de conexion: ' + err.message);
+      }
+    }
+
+    async function uploadAvatar(botId, file) {
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('avatar', file);
+      try {
+        const res = await fetch(activeApiBase + `/api/v1/bots/${encodeURIComponent(botId)}/avatar`, {
+          method: 'POST',
+          body: formData
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Error subiendo imagen: ' + (result.error || 'Desconocido'));
+        } else {
+          refreshBots();
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function refreshNumbers() {
+      const tbody = document.getElementById('numbersTableBody');
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/numbers');
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5">No hay numeros telefonicos registrados.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map(n => {
+          const statusBadge = n.is_active ? '<span class="badge badge-success">ACTIVO</span>' : '<span class="badge badge-warning">INACTIVO (STANDBY)</span>';
+          return `<tr>
+            <td><strong>${n.phone_number}</strong></td>
+            <td>${n.bot_name} (<code>${n.bot_id}</code>)</td>
+            <td>${statusBadge}</td>
+            <td>${new Date(n.last_seen).toLocaleString()}</td>
+            <td>
+              <button class="btn btn-danger" onclick="releaseNumber('${n.bot_id}', '${n.phone_number}')">Desvincular</button>
+            </td>
+          </tr>`;
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando numeros: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function assignNumberSubmit() {
+      const botId = document.getElementById('assignBotId').value.trim();
+      const phone = document.getElementById('assignPhone').value.trim();
+      if (!botId || !phone) {
+        alert('Debe completar el ID de bot y el numero telefonico');
+        return;
+      }
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/numbers/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot_id: botId, phone_number: phone })
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) {
+          alert('Fallo de asignacion: ' + (result.error || 'Error'));
+        } else {
+          document.getElementById('assignBotId').value = '';
+          document.getElementById('assignPhone').value = '';
+          refreshBots();
+          refreshNumbers();
+        }
+      } catch (err) {
+        alert('Error de comunicacion: ' + err.message);
+      }
+    }
+
+    async function releaseNumber(botId, phone) {
+      if (!confirm(`Desvincular numero ${phone} del bot ${botId}?`)) return;
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/numbers/release', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot_id: botId, phone_number: phone })
+        });
+        refreshBots();
+        refreshNumbers();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    function connectLogStream() {
+      if (eventSource) return;
+      eventSource = new EventSource(activeApiBase + '/api/v1/logs/stream');
+      eventSource.onmessage = function(e) {
+        if (logsPaused) return;
+        try {
+          const item = JSON.parse(e.data);
+          appendLogLine(item);
+        } catch (err) {}
+      };
+    }
+
+    function appendLogLine(item) {
+      const term = document.getElementById('logTerminal');
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      const lvlClass = item.level === 'ERROR' ? 'log-lvl-error' : (item.level === 'WARN' ? 'log-lvl-warn' : 'log-lvl-info');
+      div.innerHTML = `
+        <span class="log-ts">${new Date(item.created_at || Date.now()).toLocaleTimeString()}</span>
+        <span class="log-bot">${item.bot_name || item.bot_id || 'BOT'}</span>
+        <span class="${lvlClass}">${item.level || 'INFO'}</span>
+        <span>${item.message} ${item.latency_ms ? '(' + item.latency_ms + 'ms)' : ''}</span>
+      `;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function togglePauseLogs() {
+      logsPaused = !logsPaused;
+      document.getElementById('btnPauseLogs').innerText = logsPaused ? 'Reanudar' : 'Pausar';
+    }
+
+    function clearLogs() {
+      document.getElementById('logTerminal').innerHTML = '';
+    }
+
+    async function executeCommand() {
+      const input = document.getElementById('termInput');
+      const val = input.value.trim();
+      if (!val) return;
+      const term = document.getElementById('termOutput');
+      term.innerHTML += `<div style="color:#38bdf8;">> ${val}</div>`;
+      input.value = '';
+
+      try {
+        const res = await fetch(activeApiBase + '/api/v1/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: val })
+        });
+        const out = await res.text();
+        term.innerHTML += `<div style="color:#e2e8f0; margin-bottom: 8px;">${out}</div>`;
+      } catch (err) {
+        term.innerHTML += `<div style="color:#f87171;">Error: ${err.message}</div>`;
+      }
+      term.scrollTop = term.scrollHeight;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshBots();
+    });
+  </script>
+</body>
+</html>

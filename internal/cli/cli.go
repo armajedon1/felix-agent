@@ -10,9 +10,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -23,11 +27,12 @@ import (
 	"felix-go/internal/config"
 	"felix-go/internal/memory"
 	"felix-go/internal/tools"
+	"felix-go/internal/webcli"
 )
 
 func IsCLICommand(arg string) bool {
 	switch strings.ToLower(arg) {
-	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "version", "-v", "--version", "help", "-h", "--help":
+	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help":
 		return true
 	default:
 		return false
@@ -66,13 +71,25 @@ func RunCLI(args []string, configPath string) int {
 	case "status":
 		return CmdStatus(configPath)
 	case "logs":
-		return CmdLogs(subArgs)
+		return CmdLogs(subArgs, configPath)
 	case "conv", "conversations", "sessions":
 		return CmdConv(subArgs, configPath)
 	case "config":
 		return CmdConfig(subArgs, configPath)
 	case "bots", "bot":
 		return CmdBots(subArgs, configPath)
+	case "numbers", "number":
+		return CmdNumbers(subArgs, configPath)
+	case "db":
+		return CmdDB(subArgs, configPath)
+	case "apis", "api":
+		return CmdAPIs(subArgs, configPath)
+	case "auth":
+		return CmdAuth(subArgs, configPath)
+	case "web":
+		return CmdWeb(subArgs, configPath)
+	case "desktop", "gui":
+		return CmdDesktop(subArgs, configPath)
 	case "chat":
 		return CmdChat(subArgs, configPath)
 	case "version", "-v", "--version":
@@ -90,32 +107,43 @@ func RunCLI(args []string, configPath string) int {
 
 func PrintVersion() {
 	PrintBanner()
-	fmt.Println("Arquitectura: linux/amd64 (Go 1.22+)")
-	fmt.Println("Compilacion estatica, sin runtime de Python o Node.js.")
+	fmt.Printf("Arquitectura: %s/%s (Compilador: %s)\n", runtime.GOOS, runtime.GOARCH, runtime.Version())
+	fmt.Println("Compilacion estatica autonoma, sin dependencias de Python o Node.js.")
 }
 
 func PrintHelp() {
 	PrintBanner()
 	fmt.Println("Uso: felix <comando> [argumentos...]")
 	fmt.Println()
-	fmt.Println("Comandos para PC / Workstation (Evaluacion y Pruebas Locales):")
-	fmt.Println("  cli                     Inicia la sesion interactiva con presentacion grafica")
-	fmt.Println("  chat [peticion]         Abre consola de chat interactivo o ejecuta un prompt directo")
+	fmt.Println("Comandos para PC y Servidor:")
+	fmt.Println("  cli                     Inicia sesion interactiva con dibujo ASCII en terminal")
+	fmt.Println("  chat [peticion]         Abre consola de chat o ejecuta un prompt directo")
+	fmt.Println("  desktop / gui           Abre ventana de escritorio conectada a local o servidor")
+	fmt.Println("  web                     Inicia consola web ligera embebida en puerto 8056")
 	fmt.Println("  status                  Muestra el panel de salud, telemetria y estado en vivo")
-	fmt.Println("  bots [subcomando]       Motor y fabrica de bots comerciales (list, chat, create)")
-	fmt.Println("  config [show|get|set]   Consulta o modifica parametros de inferencia (modelo, api)")
+	fmt.Println("  bots [subcomando]       Gestor de bots (list, start, stop, avatar, create, show)")
+	fmt.Println("  numbers [subcomando]    Matriz de lineas telefonicas y colisiones (list, assign, release)")
+	fmt.Println("  db [subcomando]         Administracion SQLite WAL (status, vacuum, backup)")
+	fmt.Println("  apis [list|test]        Catalogo de proveedores de inferencia y pruebas de latencia")
+	fmt.Println("  auth [status|qr]        Estado de credenciales de API y sesion WhatsApp E2E")
+	fmt.Println("  logs [bots|bot <id>]    Auditoria y logs aislados de bots (-n <lineas>, -f)")
 	fmt.Println("  conv [list|show|search] Inspecciona sesiones e historial persistente en SQLite")
-	fmt.Println("  logs [-n <lineas>] [-f] Muestra o sigue en tiempo real los logs del demonio")
+	fmt.Println("  config [show|get|set]   Consulta o modifica parametros de configuracion")
 	fmt.Println("  version                 Muestra banner, version e informacion de compilacion")
 	fmt.Println("  help                    Muestra este manual de ayuda")
 	fmt.Println()
-	fmt.Println("Ejemplos de evaluacion en PC:")
+	fmt.Println("Ejemplos:")
 	fmt.Println("  felix cli")
-	fmt.Println("  felix chat 'Crea un script en Python que analice el uso de disco'")
 	fmt.Println("  felix bots list")
-	fmt.Println("  felix bots chat pizzeria-napoli")
-	fmt.Println("  felix config show")
-	fmt.Println("  felix status")
+	fmt.Println("  felix bots start pizzeria-napoli")
+	fmt.Println("  felix bots stop pizzeria-napoli")
+	fmt.Println("  felix numbers list")
+	fmt.Println("  felix numbers assign pizzeria-napoli +5491153402646")
+	fmt.Println("  felix logs bots -n 20")
+	fmt.Println("  felix logs bot pizzeria-napoli -f")
+	fmt.Println("  felix db status")
+	fmt.Println("  felix web")
+	fmt.Println("  felix desktop")
 	fmt.Println("================================================================================")
 }
 
@@ -218,13 +246,23 @@ func CmdStatus(configPath string) int {
 	return 0
 }
 
-func CmdLogs(args []string) int {
+func CmdLogs(args []string, configPath string) int {
 	lines := 50
 	follow := false
 	logType := "all"
+	targetBotID := ""
+	isBotLogs := false
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "bots":
+			isBotLogs = true
+		case "bot":
+			isBotLogs = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				targetBotID = args[i+1]
+				i++
+			}
 		case "-n", "--lines":
 			if i+1 < len(args) {
 				if n, err := strconv.Atoi(args[i+1]); err == nil && n > 0 {
@@ -239,6 +277,72 @@ func CmdLogs(args []string) int {
 		case "error", "err":
 			logType = "error"
 		}
+	}
+
+	if isBotLogs {
+		cfg, err := config.LoadConfig(configPath)
+		if err != nil {
+			fmt.Printf("Error cargando configuracion: %v\n", err)
+			return 1
+		}
+		botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
+		store, err := botfactory.NewStorage(botsDBPath)
+		if err != nil {
+			fmt.Printf("Error abriendo base de logs de bots (%s): %v\n", botsDBPath, err)
+			return 1
+		}
+		defer store.Close()
+
+		printBotLogs := func(lastSeenID int64) int64 {
+			var entries []botfactory.BotLogEntry
+			if targetBotID != "" {
+				entries, _ = store.GetBotLogs(targetBotID, lines, "")
+			} else {
+				entries, _ = store.GetAllBotLogs(lines, "")
+			}
+			maxID := lastSeenID
+			for i := len(entries) - 1; i >= 0; i-- {
+				item := entries[i]
+				if item.ID > lastSeenID {
+					dir := item.Direction
+					if dir == "" {
+						dir = "EVT"
+					}
+					lat := ""
+					if item.LatencyMs > 0 {
+						lat = fmt.Sprintf(" (%dms)", item.LatencyMs)
+					}
+					sender := ""
+					if item.SenderNumber != "" {
+						sender = fmt.Sprintf(" [%s]", item.SenderNumber)
+					}
+					fmt.Printf("[%s] [%-14s] [%-5s] [%-4s]%s %s%s\n",
+						item.CreatedAt.Format("15:04:05"), item.BotID, item.Level, dir, sender, item.Message, lat)
+					if item.ID > maxID {
+						maxID = item.ID
+					}
+				}
+			}
+			return maxID
+		}
+
+		fmt.Println("================================================================================")
+		if targetBotID != "" {
+			fmt.Printf("REGISTRO DE AUDITORIA Y LOGS PARA EL BOT: %s\n", targetBotID)
+		} else {
+			fmt.Println("REGISTRO DE AUDITORIA Y LOGS CONSOLIDADOS DE TODOS LOS BOTS")
+		}
+		fmt.Println("================================================================================")
+
+		lastID := printBotLogs(0)
+		if follow {
+			fmt.Println("\n--- Siguiendo logs de bots en vivo (Ctrl+C para salir) ---")
+			for {
+				time.Sleep(1 * time.Second)
+				lastID = printBotLogs(lastID)
+			}
+		}
+		return 0
 	}
 
 	logFiles := []string{
@@ -611,17 +715,100 @@ func CmdBots(args []string, configPath string) int {
 			fmt.Printf("Error listando bots: %v\n", err)
 			return 1
 		}
-		fmt.Println("================================================================================")
-		fmt.Printf("%-24s | %-24s | %-16s | %-8s\n", "ID DEL BOT", "NOMBRE", "TIPO", "ESTADO")
-		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Println("==========================================================================================================")
+		fmt.Printf("%-18s | %-20s | %-14s | %-15s | %-10s | %-8s | %-10s\n", "ID DEL BOT", "NOMBRE", "TIPO", "NUMERO", "NUM.ESTADO", "BOT", "AVATAR")
+		fmt.Println("----------------------------------------------------------------------------------------------------------")
 		for _, b := range bots {
-			fmt.Printf("%-24s | %-24s | %-16s | %-8s\n", b.ID, b.Name, b.Type, b.Status)
+			botState := "OFFLINE"
+			if b.Status == "active" || b.IsActive {
+				botState = "ONLINE"
+			}
+			numState := "SIN NUMERO"
+			if b.PhoneNumber != "" {
+				if botState == "ONLINE" {
+					numState = "ACTIVO"
+				} else {
+					numState = "STANDBY"
+				}
+			}
+			avatarStatus := "Sin foto"
+			if b.AvatarPath != "" {
+				avatarStatus = "Con foto"
+			}
+			phoneDisp := b.PhoneNumber
+			if phoneDisp == "" {
+				phoneDisp = "-"
+			}
+			fmt.Printf("%-18s | %-20s | %-14s | %-15s | %-10s | %-8s | %-10s\n", b.ID, b.Name, b.Type, phoneDisp, numState, botState, avatarStatus)
 		}
 		if len(bots) == 0 {
 			fmt.Println("No hay bots creados actualmente.")
 		}
-		fmt.Println("================================================================================")
-		fmt.Println("Usa 'felix bots show <bot_id>' o 'felix bots chat <bot_id>' para interactuar.")
+		fmt.Println("==========================================================================================================")
+		fmt.Println("Comandos: felix bots start <id> | felix bots stop <id> | felix bots avatar <id> <img_path>")
+
+	case "start":
+		if len(args) < 2 {
+			fmt.Println("Uso: felix bots start <bot_id>")
+			return 1
+		}
+		botID := args[1]
+		if err := store.SetBotActive(botID, true); err != nil {
+			fmt.Printf("Error activando bot: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Bot '%s' activado exitosamente (ONLINE). Su linea telefonica esta activa.\n", botID)
+
+	case "stop":
+		if len(args) < 2 {
+			fmt.Println("Uso: felix bots stop <bot_id>")
+			return 1
+		}
+		botID := args[1]
+		if err := store.SetBotActive(botID, false); err != nil {
+			fmt.Printf("Error desactivando bot: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Bot '%s' desactivado exitosamente (OFFLINE). Su linea pasa a estado STANDBY.\n", botID)
+
+	case "avatar":
+		if len(args) < 3 {
+			fmt.Println("Uso: felix bots avatar <bot_id> <ruta_a_imagen>")
+			return 1
+		}
+		botID := args[1]
+		imgPath := args[2]
+		if _, err := os.Stat(imgPath); err != nil {
+			fmt.Printf("Error: archivo de imagen no encontrado: %v\n", err)
+			return 1
+		}
+		ext := filepath.Ext(imgPath)
+		if ext == "" {
+			ext = ".png"
+		}
+		avatarsDir := filepath.Join(cfg.DataDir, "avatars")
+		_ = os.MkdirAll(avatarsDir, 0755)
+		destPath := filepath.Join(avatarsDir, fmt.Sprintf("%s%s", botID, ext))
+
+		inF, err := os.Open(imgPath)
+		if err != nil {
+			fmt.Printf("Error leyendo imagen origen: %v\n", err)
+			return 1
+		}
+		defer inF.Close()
+		outF, err := os.Create(destPath)
+		if err != nil {
+			fmt.Printf("Error creando archivo destino: %v\n", err)
+			return 1
+		}
+		defer outF.Close()
+		_, _ = io.Copy(outF, inF)
+
+		if err := store.SetAvatar(botID, destPath); err != nil {
+			fmt.Printf("Error registrando avatar: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Avatar del bot '%s' asignado exitosamente: %s\n", botID, destPath)
 
 	case "show", "inspect":
 		if len(args) < 2 {
@@ -830,11 +1017,369 @@ func CmdBots(args []string, configPath string) int {
 		fmt.Printf("Bot '%s' eliminado correctamente.\n", args[1])
 
 	default:
-		fmt.Println("Acciones disponibles para 'felix bots': list, show, create, replicate, chat, orders, appointments, export, delete")
+		fmt.Println("Acciones disponibles para 'felix bots': list, start, stop, avatar, show, create, replicate, chat, orders, appointments, export, delete")
 		return 1
 	}
 
 	return 0
+}
+
+func CmdNumbers(args []string, configPath string) int {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error cargando configuracion: %v\n", err)
+		return 1
+	}
+
+	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
+	store, err := botfactory.NewStorage(botsDBPath)
+	if err != nil {
+		fmt.Printf("Error abriendo base de bots (%s): %v\n", botsDBPath, err)
+		return 1
+	}
+	defer store.Close()
+
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(args[0])
+	}
+
+	switch action {
+	case "list":
+		numbers, err := store.ListNumbers()
+		if err != nil {
+			fmt.Printf("Error listando numeros: %v\n", err)
+			return 1
+		}
+		fmt.Println("================================================================================")
+		fmt.Printf("%-20s | %-16s | %-20s | %-12s\n", "NUMERO TELEFONICO", "BOT ASIGNADO", "NOMBRE BOT", "ESTADO")
+		fmt.Println("--------------------------------------------------------------------------------")
+		for _, n := range numbers {
+			state := "STANDBY"
+			if n.IsActive {
+				state = "ACTIVO"
+			}
+			fmt.Printf("%-20s | %-16s | %-20s | %-12s\n", n.PhoneNumber, n.BotID, n.BotName, state)
+		}
+		if len(numbers) == 0 {
+			fmt.Println("No hay numeros telefonicos registrados actualmente.")
+		}
+		fmt.Println("================================================================================")
+		fmt.Println("Uso: felix numbers assign <bot_id> <numero> | felix numbers release <bot_id> <numero>")
+
+	case "assign":
+		if len(args) < 3 {
+			fmt.Println("Uso: felix numbers assign <bot_id> <numero>")
+			return 1
+		}
+		botID := args[1]
+		phone := args[2]
+		if err := store.AssignNumber(botID, phone); err != nil {
+			fmt.Printf("Fallo de asignacion: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Numero '%s' asignado exitosamente al bot '%s'.\n", phone, botID)
+
+	case "release":
+		if len(args) < 3 {
+			fmt.Println("Uso: felix numbers release <bot_id> <numero>")
+			return 1
+		}
+		botID := args[1]
+		phone := args[2]
+		if err := store.ReleaseNumber(botID, phone); err != nil {
+			fmt.Printf("Error desvinculando numero: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Numero '%s' desvinculado correctamente del bot '%s'.\n", phone, botID)
+
+	default:
+		fmt.Println("Subcomandos disponibles para 'felix numbers': list, assign, release")
+		return 1
+	}
+
+	return 0
+}
+
+func CmdDB(args []string, configPath string) int {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error cargando configuracion: %v\n", err)
+		return 1
+	}
+
+	subCmd := "status"
+	if len(args) > 0 {
+		subCmd = strings.ToLower(args[0])
+	}
+
+	dbFiles := []string{
+		filepath.Join(cfg.DataDir, "bots.db"),
+		filepath.Join(cfg.DataDir, "sessions.db"),
+		filepath.Join(cfg.DataDir, "users.db"),
+		filepath.Join(cfg.DataDir, "reminders.db"),
+	}
+
+	switch subCmd {
+	case "status":
+		fmt.Println("================================================================================")
+		fmt.Printf("%-24s | %-12s | %-12s | %-16s\n", "BASE DE DATOS", "TAMANO BASE", "TAMANO WAL", "INTEGRIDAD")
+		fmt.Println("--------------------------------------------------------------------------------")
+		for _, dbPath := range dbFiles {
+			baseName := filepath.Base(dbPath)
+			fi, err := os.Stat(dbPath)
+			if err != nil {
+				fmt.Printf("%-24s | %-12s | %-12s | %-16s\n", baseName, "No existe", "-", "-")
+				continue
+			}
+			sizeStr := fmt.Sprintf("%.2f KB", float64(fi.Size())/1024)
+			walFi, walErr := os.Stat(dbPath + "-wal")
+			walStr := "0 KB"
+			if walErr == nil {
+				walStr = fmt.Sprintf("%.2f KB", float64(walFi.Size())/1024)
+			}
+
+			integrity := "OK"
+			db, dbErr := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(1000)")
+			if dbErr == nil {
+				var checkRes string
+				if err := db.QueryRow("PRAGMA quick_check;").Scan(&checkRes); err != nil || checkRes != "ok" {
+					integrity = "WARN"
+				}
+				db.Close()
+			} else {
+				integrity = "ERROR"
+			}
+
+			fmt.Printf("%-24s | %-12s | %-12s | %-16s\n", baseName, sizeStr, walStr, integrity)
+		}
+		fmt.Println("================================================================================")
+
+	case "vacuum":
+		fmt.Println("Optimizando y compactando bases de datos SQLite...")
+		for _, dbPath := range dbFiles {
+			if _, err := os.Stat(dbPath); err != nil {
+				continue
+			}
+			db, err := sql.Open("sqlite", dbPath)
+			if err != nil {
+				continue
+			}
+			_, _ = db.Exec("VACUUM; PRAGMA optimize;")
+			db.Close()
+			fmt.Printf("- %s: optimizado y compactado\n", filepath.Base(dbPath))
+		}
+		fmt.Println("Operacion de mantenimiento finalizada con exito.")
+
+	case "backup":
+		destDir := filepath.Join(cfg.DataDir, "backups")
+		_ = os.MkdirAll(destDir, 0755)
+		ts := time.Now().UTC().Format("20060102_150405")
+		fmt.Printf("Generando copias de seguridad consistentes en %s...\n", destDir)
+		for _, dbPath := range dbFiles {
+			if _, err := os.Stat(dbPath); err != nil {
+				continue
+			}
+			baseName := filepath.Base(dbPath)
+			targetFile := filepath.Join(destDir, fmt.Sprintf("%s_%s.bak", strings.TrimSuffix(baseName, ".db"), ts))
+			src, err := os.Open(dbPath)
+			if err != nil {
+				continue
+			}
+			dst, err := os.Create(targetFile)
+			if err != nil {
+				src.Close()
+				continue
+			}
+			_, _ = io.Copy(dst, src)
+			src.Close()
+			dst.Close()
+			fmt.Printf("- %s -> %s\n", baseName, filepath.Base(targetFile))
+		}
+		fmt.Println("Respaldos completados exitosamente.")
+
+	default:
+		fmt.Println("Subcomandos disponibles para 'felix db': status, vacuum, backup")
+		return 1
+	}
+	return 0
+}
+
+func CmdAPIs(args []string, configPath string) int {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error cargando configuracion: %v\n", err)
+		return 1
+	}
+
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(args[0])
+	}
+
+	switch action {
+	case "list":
+		fmt.Println("================================================================================")
+		fmt.Printf("%-24s | %-24s | %-26s\n", "PROVEEDOR", "MODELO", "ENDPOINT")
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Printf("%-24s | %-24s | %-26s\n", "Principal ("+cfg.Provider+")", cfg.Model, cfg.APIBase)
+		if cfg.FallbackModel != "" {
+			fmt.Printf("%-24s | %-24s | %-26s\n", "Fallback", cfg.FallbackModel, cfg.FallbackAPIBase)
+		}
+		fmt.Printf("%-24s | %-24s | %-26s\n", "Antigravity Proxy", "gemini-3.8-flash-high", "http://127.0.0.1:8045/v1")
+		fmt.Println("================================================================================")
+
+	case "test":
+		fmt.Printf("Comprobando conexion contra %s...\n", cfg.APIBase)
+		start := time.Now()
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, _ := http.NewRequest("GET", cfg.APIBase, nil)
+		resp, err := client.Do(req)
+		latency := time.Since(start).Milliseconds()
+		if err != nil {
+			fmt.Printf("Aviso: endpoint no admite GET directo o devolvio error (%v) en %dms.\n", err, latency)
+		} else {
+			resp.Body.Close()
+			fmt.Printf("Endpoint accesible (HTTP %d, latencia: %dms).\n", resp.StatusCode, latency)
+		}
+
+	default:
+		fmt.Println("Subcomandos disponibles para 'felix apis': list, test")
+		return 1
+	}
+	return 0
+}
+
+func CmdAuth(args []string, configPath string) int {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error cargando configuracion: %v\n", err)
+		return 1
+	}
+
+	fmt.Println("================================================================================")
+	fmt.Println("ESTADO DE AUTENTICACION Y CREDENCIALES:")
+	fmt.Println("================================================================================")
+	keyStatus := "NO CONFIGURADA"
+	if cfg.APIKey != "" {
+		keyStatus = fmt.Sprintf("Configurada (%d caracteres)", len(cfg.APIKey))
+	}
+	fmt.Printf("Inferencia LLM:          %s\n", keyStatus)
+	groqStatus := "NO CONFIGURADA"
+	if cfg.GroqAPIKey != "" {
+		groqStatus = "Configurada"
+	}
+	fmt.Printf("Groq Audio Whisper:      %s\n", groqStatus)
+
+	waDBPath := filepath.Join(cfg.DataDir, "whatsapp.db")
+	waStatus := "Sin sesion guardada"
+	if fi, err := os.Stat(waDBPath); err == nil && fi.Size() > 0 {
+		waStatus = "Sesion E2E registrada en " + waDBPath
+	}
+	fmt.Printf("WhatsApp Dispositivo:    %s\n", waStatus)
+	fmt.Println("================================================================================")
+	return 0
+}
+
+func CmdWeb(args []string, configPath string) int {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error cargando configuracion: %v\n", err)
+		return 1
+	}
+
+	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
+	store, err := botfactory.NewStorage(botsDBPath)
+	if err != nil {
+		fmt.Printf("Error abriendo base de bots: %v\n", err)
+		return 1
+	}
+	defer store.Close()
+
+	port := 8056
+	srv := webcli.NewServer(port, store, cfg, cfg.DataDir)
+	actualPort, err := srv.Start()
+	if err != nil {
+		fmt.Printf("Error iniciando Web CLI: %v\n", err)
+		return 1
+	}
+
+	PrintBanner()
+	fmt.Printf("Consola Web CLI de Felix iniciada exitosamente.\n")
+	fmt.Printf("Acceso Web Local: http://localhost:%d\n", actualPort)
+	fmt.Printf("Presione Ctrl+C para detener el servidor.\n")
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	fmt.Println("\nDeteniendo consola web...")
+	_ = srv.Stop()
+	return 0
+}
+
+func CmdDesktop(args []string, configPath string) int {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		fmt.Printf("Error cargando configuracion: %v\n", err)
+		return 1
+	}
+
+	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
+	store, err := botfactory.NewStorage(botsDBPath)
+	if err != nil {
+		fmt.Printf("Error abriendo base de bots: %v\n", err)
+		return 1
+	}
+	defer store.Close()
+
+	port := 8056
+	srv := webcli.NewServer(port, store, cfg, cfg.DataDir)
+	actualPort, err := srv.Start()
+	if err != nil {
+		fmt.Printf("Error iniciando servicio para ventana desktop: %v\n", err)
+		return 1
+	}
+
+	targetURL := fmt.Sprintf("http://localhost:%d", actualPort)
+	PrintBanner()
+	fmt.Printf("Iniciando ventana de escritorio Felix en %s...\n", targetURL)
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		openAppWindow(targetURL)
+	}()
+
+	fmt.Println("Ventana de escritorio activa. Presione Ctrl+C en esta terminal para cerrarla.")
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	_ = srv.Stop()
+	return 0
+}
+
+func openAppWindow(url string) {
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("cmd", "/c", "start", url).Start()
+		return
+	}
+
+	appCommands := [][]string{
+		{"google-chrome", "--app=" + url},
+		{"chromium-browser", "--app=" + url},
+		{"chromium", "--app=" + url},
+		{"brave-browser", "--app=" + url},
+		{"xdg-open", url},
+	}
+
+	for _, cmd := range appCommands {
+		if _, err := exec.LookPath(cmd[0]); err == nil {
+			if err := exec.Command(cmd[0], cmd[1:]...).Start(); err == nil {
+				return
+			}
+		}
+	}
 }
 
 func sendBotChatMessage(endpoint, sessionID, message string) (string, error) {

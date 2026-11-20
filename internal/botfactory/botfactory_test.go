@@ -259,3 +259,80 @@ func TestExportStandalone(t *testing.T) {
 		}
 	}
 }
+
+func TestBotNumbersCollisionAndLogs(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "bots_collision_test.db")
+
+	store, err := NewStorage(dbPath)
+	if err != nil {
+		t.Fatalf("error creando storage: %v", err)
+	}
+	defer store.Close()
+
+	botA := &BotSpec{
+		ID:          "bot-a",
+		Name:        "Bot Alpha",
+		Type:        TypeOrderTaking,
+		PhoneNumber: "+5491100002222",
+		Status:      "active",
+	}
+	if err := store.SaveBot(botA); err != nil {
+		t.Fatalf("error guardando bot A: %v", err)
+	}
+
+	botB := &BotSpec{
+		ID:          "bot-b",
+		Name:        "Bot Beta",
+		Type:        TypeFAQSupport,
+		PhoneNumber: "+5491100002222",
+		Status:      "active",
+	}
+	if err := store.SaveBot(botB); err == nil {
+		t.Fatalf("se esperaba error de colision al guardar bot B con mismo numero activo")
+	}
+
+	botB.Status = "inactive"
+	if err := store.SaveBot(botB); err != nil {
+		t.Fatalf("error guardando bot B inactivo: %v", err)
+	}
+
+	if err := store.SetBotActive("bot-b", true); err == nil {
+		t.Fatalf("se esperaba error al activar bot B mientras bot A usa el mismo numero")
+	}
+
+	if err := store.SetBotActive("bot-a", false); err != nil {
+		t.Fatalf("error desactivando bot A: %v", err)
+	}
+	if err := store.SetBotActive("bot-b", true); err != nil {
+		t.Fatalf("error activando bot B tras desactivar bot A: %v", err)
+	}
+
+	numbers, err := store.ListNumbers()
+	if err != nil {
+		t.Fatalf("error listando numeros: %v", err)
+	}
+	if len(numbers) != 2 {
+		t.Fatalf("se esperaban 2 asignaciones de numero, se obtuvieron %d", len(numbers))
+	}
+
+	log1 := &BotLogEntry{
+		BotID:        "bot-b",
+		Level:        "INFO",
+		Direction:    "INBOUND",
+		SenderNumber: "+5491133334444",
+		Message:      "Hola, consulta de soporte",
+		LatencyMs:    120,
+	}
+	if err := store.LogEvent(log1); err != nil {
+		t.Fatalf("error guardando log: %v", err)
+	}
+
+	logs, err := store.GetBotLogs("bot-b", 10, "")
+	if err != nil || len(logs) != 1 {
+		t.Fatalf("se esperaba 1 log para bot-b, se obtuvieron %d", len(logs))
+	}
+	if logs[0].Message != "Hola, consulta de soporte" {
+		t.Errorf("mensaje de log inesperado: %s", logs[0].Message)
+	}
+}

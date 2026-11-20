@@ -7,7 +7,7 @@ import (
 )
 
 func TestIsCLICommand(t *testing.T) {
-	valid := []string{"cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "version", "-v", "--version", "help", "-h", "--help"}
+	valid := []string{"cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help"}
 	for _, cmd := range valid {
 		if !IsCLICommand(cmd) {
 			t.Errorf("se esperaba que '%s' fuera reconocido como comando CLI", cmd)
@@ -94,5 +94,62 @@ func TestCmdBots(t *testing.T) {
 	// 5. delete
 	if code := CmdBots([]string{"delete", "piz-test-2"}, cfgPath); code != 0 {
 		t.Errorf("CmdBots delete retorno %d", code)
+	}
+}
+
+func TestCmdNumbersAndDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.json")
+	cfgJSON := `{"data_dir": "` + tmpDir + `"}`
+	_ = os.WriteFile(cfgPath, []byte(cfgJSON), 0644)
+
+	// Crear un bot primero
+	_ = CmdBots([]string{"create", "--template", "pizzeria", "--id", "piz-num", "--name", "Pizzeria Num"}, cfgPath)
+
+	// 1. Listar numeros (vacio)
+	if code := CmdNumbers([]string{"list"}, cfgPath); code != 0 {
+		t.Errorf("CmdNumbers list retorno %d", code)
+	}
+
+	// 2. Asignar numero
+	if code := CmdNumbers([]string{"assign", "piz-num", "+5491155556666"}, cfgPath); code != 0 {
+		t.Errorf("CmdNumbers assign retorno %d", code)
+	}
+
+	// 3. Listar numeros (debe mostrar el numero)
+	if code := CmdNumbers([]string{"list"}, cfgPath); code != 0 {
+		t.Errorf("CmdNumbers list tras asignacion retorno %d", code)
+	}
+
+	// 4. Iniciar y detener bot
+	if code := CmdBots([]string{"start", "piz-num"}, cfgPath); code != 0 {
+		t.Errorf("CmdBots start retorno %d", code)
+	}
+	if code := CmdBots([]string{"stop", "piz-num"}, cfgPath); code != 0 {
+		t.Errorf("CmdBots stop retorno %d", code)
+	}
+
+	// 5. Desvincular numero
+	if code := CmdNumbers([]string{"release", "piz-num", "+5491155556666"}, cfgPath); code != 0 {
+		t.Errorf("CmdNumbers release retorno %d", code)
+	}
+
+	// 6. Test DB commands
+	if code := CmdDB([]string{"status"}, cfgPath); code != 0 {
+		t.Errorf("CmdDB status retorno %d", code)
+	}
+	if code := CmdDB([]string{"vacuum"}, cfgPath); code != 0 {
+		t.Errorf("CmdDB vacuum retorno %d", code)
+	}
+	if code := CmdDB([]string{"backup"}, cfgPath); code != 0 {
+		t.Errorf("CmdDB backup retorno %d", code)
+	}
+
+	// 7. Test APIs y Auth
+	if code := CmdAPIs([]string{"list"}, cfgPath); code != 0 {
+		t.Errorf("CmdAPIs list retorno %d", code)
+	}
+	if code := CmdAuth([]string{"status"}, cfgPath); code != 0 {
+		t.Errorf("CmdAuth status retorno %d", code)
 	}
 }

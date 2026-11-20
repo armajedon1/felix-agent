@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -83,13 +82,7 @@ func (t *ExecTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", params.Command)
 	cmd.Dir = workDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process != nil && cmd.Process.Pid > 0 {
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-		return nil
-	}
+	configureProcessGroup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 
 	var stdout, stderr bytes.Buffer
@@ -510,13 +503,7 @@ func (t *GcliTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", fullCmd)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process != nil && cmd.Process.Pid > 0 {
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-		return nil
-	}
+	configureProcessGroup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 
 	out, err := cmd.CombinedOutput()
@@ -560,13 +547,7 @@ func (t *HomelabTool) Execute(ctx context.Context, args json.RawMessage) (string
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", params.Command)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process != nil && cmd.Process.Pid > 0 {
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-		return nil
-	}
+	configureProcessGroup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 
 	out, err := cmd.CombinedOutput()

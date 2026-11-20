@@ -93,6 +93,31 @@ func (s *Storage) initSchema() error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_bot_appointments_lookup 
 			ON bot_appointments(bot_id, start_time);`,
+		`CREATE TABLE IF NOT EXISTS bot_numbers (
+			phone_number TEXT NOT NULL,
+			bot_id TEXT NOT NULL,
+			is_active INTEGER NOT NULL DEFAULT 0,
+			carrier_info TEXT,
+			last_seen DATETIME,
+			PRIMARY KEY (phone_number, bot_id)
+		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_active_phone_number 
+			ON bot_numbers(phone_number) 
+			WHERE is_active = 1;`,
+		`CREATE TABLE IF NOT EXISTS bot_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			bot_id TEXT NOT NULL,
+			level TEXT NOT NULL,
+			direction TEXT,
+			sender_number TEXT,
+			message TEXT NOT NULL,
+			latency_ms INTEGER DEFAULT 0,
+			created_at DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_bot_logs_bot_id_created 
+			ON bot_logs(bot_id, created_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_bot_logs_level 
+			ON bot_logs(level, created_at DESC);`,
 	}
 
 	for _, query := range queries {
@@ -115,6 +140,15 @@ func (s *Storage) SaveBot(spec *BotSpec) error {
 	if spec.Status == "" {
 		spec.Status = "active"
 	}
+	spec.IsActive = (spec.Status == "active")
+
+	if spec.PhoneNumber != "" && spec.IsActive {
+		var otherBotID string
+		err := s.db.QueryRow("SELECT bot_id FROM bot_numbers WHERE phone_number = ? AND is_active = 1 AND bot_id != ?", spec.PhoneNumber, spec.ID).Scan(&otherBotID)
+		if err == nil && otherBotID != "" {
+			return fmt.Errorf("colision de numero: el numero '%s' ya esta activo en el bot '%s'. Debe desactivar el otro bot antes de activarlo en este", spec.PhoneNumber, otherBotID)
+		}
+	}
 
 	raw, err := json.Marshal(spec)
 	if err != nil {
@@ -131,8 +165,26 @@ func (s *Storage) SaveBot(spec *BotSpec) error {
 			status = excluded.status,
 			updated_at = excluded.updated_at;`
 
-	_, err = s.db.Exec(query, spec.ID, spec.Name, string(spec.Type), spec.Description, string(raw), spec.Status, spec.CreatedAt, spec.UpdatedAt)
-	return err
+	if _, err := s.db.Exec(query, spec.ID, spec.Name, string(spec.Type), spec.Description, string(raw), spec.Status, spec.CreatedAt, spec.UpdatedAt); err != nil {
+		return err
+	}
+
+	if spec.PhoneNumber != "" {
+		numActive := 0
+		if spec.IsActive {
+			numActive = 1
+		}
+		numQuery := `INSERT INTO bot_numbers (phone_number, bot_id, is_active, last_seen)
+			VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(phone_number, bot_id) DO UPDATE SET
+				is_active = excluded.is_active,
+				last_seen = CURRENT_TIMESTAMP;`
+		if _, err := s.db.Exec(numQuery, spec.PhoneNumber, spec.ID, numActive); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Storage) GetBot(id string) (*BotSpec, error) {
@@ -450,6 +502,325 @@ func (s *Storage) GetStats(botID string) (*BotStats, error) {
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM bot_appointments WHERE bot_id = ?", botID).Scan(&stats.TotalAppointments)
 
 	return stats, nil
+}
+
+func (s *Storage) AssignNumber(botID, phoneNumber string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("bot con id '%s' no encontrado", botID)
+		}
+		return err
+	}
+
+	var spec BotSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return err
+	}
+
+	isActive := (spec.Status == "active" || spec.IsActive)
+	if isActive {
+		var otherBotID string
+		err := s.db.QueryRow("SELECT bot_id FROM bot_numbers WHERE phone_number = ? AND is_active = 1 AND bot_id != ?", phoneNumber, botID).Scan(&otherBotID)
+		if err == nil && otherBotID != "" {
+			return fmt.Errorf("colision de numero: el numero '%s' ya esta asignado y activo en el bot '%s'. Debe desactivar el otro bot antes de asignarlo", phoneNumber, otherBotID)
+		}
+	}
+
+	numActive := 0
+	if isActive {
+		numActive = 1
+	}
+
+	numQuery := `INSERT INTO bot_numbers (phone_number, bot_id, is_active, last_seen)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(phone_number, bot_id) DO UPDATE SET
+			is_active = excluded.is_active,
+			last_seen = CURRENT_TIMESTAMP;`
+	if _, err := s.db.Exec(numQuery, phoneNumber, botID, numActive); err != nil {
+		return err
+	}
+
+	spec.PhoneNumber = phoneNumber
+	spec.UpdatedAt = time.Now().UTC()
+	updatedRaw, err := json.Marshal(&spec)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec("UPDATE bots SET spec_json = ?, updated_at = ? WHERE id = ?", string(updatedRaw), spec.UpdatedAt, botID)
+	return err
+}
+
+func (s *Storage) ReleaseNumber(botID, phoneNumber string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, err := s.db.Exec("DELETE FROM bot_numbers WHERE bot_id = ? AND phone_number = ?", botID, phoneNumber); err != nil {
+		return err
+	}
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err == nil {
+		var spec BotSpec
+		if err := json.Unmarshal([]byte(raw), &spec); err == nil {
+			if spec.PhoneNumber == phoneNumber {
+				spec.PhoneNumber = ""
+				spec.UpdatedAt = time.Now().UTC()
+				if updatedRaw, err := json.Marshal(&spec); err == nil {
+					_, _ = s.db.Exec("UPDATE bots SET spec_json = ?, updated_at = ? WHERE id = ?", string(updatedRaw), spec.UpdatedAt, botID)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Storage) SetBotActive(botID string, active bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("bot con id '%s' no encontrado", botID)
+		}
+		return err
+	}
+
+	var spec BotSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return err
+	}
+
+	if active {
+		if spec.PhoneNumber != "" {
+			var otherBotID string
+			err := s.db.QueryRow("SELECT bot_id FROM bot_numbers WHERE phone_number = ? AND is_active = 1 AND bot_id != ?", spec.PhoneNumber, botID).Scan(&otherBotID)
+			if err == nil && otherBotID != "" {
+				return fmt.Errorf("colision de numero: el numero '%s' asignado a este bot ya esta activo en el bot '%s'. Debe desactivar el otro bot primero", spec.PhoneNumber, otherBotID)
+			}
+		}
+		spec.Status = "active"
+		spec.IsActive = true
+		if _, err := s.db.Exec("UPDATE bot_numbers SET is_active = 1 WHERE bot_id = ?", botID); err != nil {
+			return err
+		}
+	} else {
+		spec.Status = "inactive"
+		spec.IsActive = false
+		if _, err := s.db.Exec("UPDATE bot_numbers SET is_active = 0 WHERE bot_id = ?", botID); err != nil {
+			return err
+		}
+	}
+
+	spec.UpdatedAt = time.Now().UTC()
+	updatedRaw, err := json.Marshal(&spec)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec("UPDATE bots SET status = ?, spec_json = ?, updated_at = ? WHERE id = ?", spec.Status, string(updatedRaw), spec.UpdatedAt, botID)
+	return err
+}
+
+func parseSQLiteTime(raw any) time.Time {
+	if raw == nil {
+		return time.Now().UTC()
+	}
+	if t, ok := raw.(time.Time); ok {
+		return t
+	}
+	if s, ok := raw.(string); ok {
+		if parsed, err := time.Parse(time.RFC3339, s); err == nil {
+			return parsed
+		}
+		if parsed, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+			return parsed
+		}
+		if parsed, err := time.Parse("2006-01-02T15:04:05Z", s); err == nil {
+			return parsed
+		}
+	}
+	return time.Now().UTC()
+}
+
+func (s *Storage) ListNumbers() ([]BotNumberInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `SELECT n.phone_number, n.bot_id, COALESCE(b.name, 'Sin asignar'), n.is_active, COALESCE(n.last_seen, CURRENT_TIMESTAMP)
+		FROM bot_numbers n
+		LEFT JOIN bots b ON n.bot_id = b.id
+		ORDER BY n.phone_number ASC;`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []BotNumberInfo
+	for rows.Next() {
+		var info BotNumberInfo
+		var activeInt int
+		var lastSeenRaw any
+		if err := rows.Scan(&info.PhoneNumber, &info.BotID, &info.BotName, &activeInt, &lastSeenRaw); err != nil {
+			continue
+		}
+		info.IsActive = (activeInt == 1)
+		info.LastSeen = parseSQLiteTime(lastSeenRaw)
+		result = append(result, info)
+	}
+
+	return result, nil
+}
+
+func (s *Storage) SetAvatar(botID, avatarPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("bot con id '%s' no encontrado", botID)
+		}
+		return err
+	}
+
+	var spec BotSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return err
+	}
+
+	spec.AvatarPath = avatarPath
+	spec.UpdatedAt = time.Now().UTC()
+	updatedRaw, err := json.Marshal(&spec)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec("UPDATE bots SET spec_json = ?, updated_at = ? WHERE id = ?", string(updatedRaw), spec.UpdatedAt, botID)
+	return err
+}
+
+func (s *Storage) LogEvent(entry *BotLogEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	if entry.Level == "" {
+		entry.Level = "INFO"
+	}
+
+	query := `INSERT INTO bot_logs (bot_id, level, direction, sender_number, message, latency_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?);`
+
+	res, err := s.db.Exec(query, entry.BotID, entry.Level, entry.Direction, entry.SenderNumber, entry.Message, entry.LatencyMs, entry.CreatedAt)
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err == nil {
+		entry.ID = id
+	}
+	return nil
+}
+
+func (s *Storage) GetBotLogs(botID string, limit int, level string) ([]BotLogEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if level != "" {
+		query = `SELECT l.id, l.bot_id, COALESCE(b.name, l.bot_id), l.level, COALESCE(l.direction, ''), COALESCE(l.sender_number, ''), l.message, l.latency_ms, l.created_at
+			FROM bot_logs l
+			LEFT JOIN bots b ON l.bot_id = b.id
+			WHERE l.bot_id = ? AND UPPER(l.level) = UPPER(?)
+			ORDER BY l.id DESC LIMIT ?;`
+		rows, err = s.db.Query(query, botID, level, limit)
+	} else {
+		query = `SELECT l.id, l.bot_id, COALESCE(b.name, l.bot_id), l.level, COALESCE(l.direction, ''), COALESCE(l.sender_number, ''), l.message, l.latency_ms, l.created_at
+			FROM bot_logs l
+			LEFT JOIN bots b ON l.bot_id = b.id
+			WHERE l.bot_id = ?
+			ORDER BY l.id DESC LIMIT ?;`
+		rows, err = s.db.Query(query, botID, limit)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []BotLogEntry
+	for rows.Next() {
+		var item BotLogEntry
+		var createdRaw any
+		if err := rows.Scan(&item.ID, &item.BotID, &item.BotName, &item.Level, &item.Direction, &item.SenderNumber, &item.Message, &item.LatencyMs, &createdRaw); err != nil {
+			continue
+		}
+		item.CreatedAt = parseSQLiteTime(createdRaw)
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (s *Storage) GetAllBotLogs(limit int, level string) ([]BotLogEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if level != "" {
+		query = `SELECT l.id, l.bot_id, COALESCE(b.name, l.bot_id), l.level, COALESCE(l.direction, ''), COALESCE(l.sender_number, ''), l.message, l.latency_ms, l.created_at
+			FROM bot_logs l
+			LEFT JOIN bots b ON l.bot_id = b.id
+			WHERE UPPER(l.level) = UPPER(?)
+			ORDER BY l.id DESC LIMIT ?;`
+		rows, err = s.db.Query(query, level, limit)
+	} else {
+		query = `SELECT l.id, l.bot_id, COALESCE(b.name, l.bot_id), l.level, COALESCE(l.direction, ''), COALESCE(l.sender_number, ''), l.message, l.latency_ms, l.created_at
+			FROM bot_logs l
+			LEFT JOIN bots b ON l.bot_id = b.id
+			ORDER BY l.id DESC LIMIT ?;`
+		rows, err = s.db.Query(query, limit)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []BotLogEntry
+	for rows.Next() {
+		var item BotLogEntry
+		var createdRaw any
+		if err := rows.Scan(&item.ID, &item.BotID, &item.BotName, &item.Level, &item.Direction, &item.SenderNumber, &item.Message, &item.LatencyMs, &createdRaw); err != nil {
+			continue
+		}
+		item.CreatedAt = parseSQLiteTime(createdRaw)
+		result = append(result, item)
+	}
+	return result, nil
 }
 
 func (s *Storage) Close() error {

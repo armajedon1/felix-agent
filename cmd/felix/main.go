@@ -33,6 +33,7 @@ import (
 	"felix-go/internal/scheduler"
 	"felix-go/internal/tools"
 	"felix-go/internal/users"
+	"felix-go/internal/webcli"
 	"felix-go/internal/whatsapp"
 )
 
@@ -473,6 +474,21 @@ func main() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stopCancel()
 		_ = healthServer.Stop(stopCtx)
+	}()
+
+	var webServer *webcli.Server
+	if botStore != nil {
+		webServer = webcli.NewServer(8056, botStore, cfg, cfg.DataDir)
+		if webPort, err := webServer.Start(); err == nil {
+			log.Printf("Consola Web CLI embebida iniciada en http://0.0.0.0:%d", webPort)
+		} else {
+			log.Printf("[aviso] no se pudo iniciar Web CLI embebido: %v", err)
+		}
+	}
+	defer func() {
+		if webServer != nil {
+			_ = webServer.Stop()
+		}
 	}()
 
 	// Iniciar todos los canales activos
