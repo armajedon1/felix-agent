@@ -32,7 +32,7 @@ import (
 
 func IsCLICommand(arg string) bool {
 	switch strings.ToLower(arg) {
-	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help":
+	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help", "onboard", "setup", "doctor":
 		return true
 	default:
 		return false
@@ -41,16 +41,16 @@ func IsCLICommand(arg string) bool {
 
 func PrintBanner() {
 	fmt.Println("================================================================================")
-	fmt.Println(`       /\_/\      ███████╗███████╗██╗     ██╗██╗  ██╗`)
-	fmt.Println(`      ( o.o )     ██╔════╝██╔════╝██║     ██║╚██╗██╔╝`)
-	fmt.Println(`       > ^ <      █████╗  █████╗  ██║     ██║ ╚███╔╝ `)
-	fmt.Println(`      /|   |\     ██╔══╝  ██╔══╝  ██║     ██║ ██╔██╗ `)
-	fmt.Println(`     (_|   |_)    ██║     ███████╗███████╗██║██╔╝ ██╗`)
-	fmt.Println(`       "   "      ╚═╝     ╚══════╝╚══════╝╚═╝╚═╝  ╚═╝`)
-	fmt.Println(`     [FELIX]      A G E N T  //  S W E  &  D e v O p s`)
+	fmt.Println(`          ███████╗███████╗██╗     ██╗██╗  ██╗`)
+	fmt.Println(`          ██╔════╝██╔════╝██║     ██║╚██╗██╔╝`)
+	fmt.Println(`          █████╗  █████╗  ██║     ██║ ╚███╔╝ `)
+	fmt.Println(`          ██╔══╝  ██╔══╝  ██║     ██║ ██╔██╗ `)
+	fmt.Println(`          ██║     ███████╗███████╗██║██╔╝ ██╗`)
+	fmt.Println(`          ╚═╝     ╚══════╝╚══════╝╚═╝╚═╝  ╚═╝`)
+	fmt.Println(`          A G E N T  //  S W E  &  D E V O P S`)
 	fmt.Println("================================================================================")
 	fmt.Println(" Modo: Consola CLI Interactiva (Workstation & Evaluacion Local)")
-	fmt.Println(" Version: v2.2.0 | Runtime: Go Nativo (Sin dependencias externas)")
+	fmt.Println(" Version: v2.3.0 | Runtime: Go Nativo (Sin dependencias externas)")
 	fmt.Println(" Soberania: Republica Argentina [ARG] | Licencia: MIT Open Source")
 	fmt.Println(" Repositorio: https://github.com/m-leiva/felix-agent")
 	fmt.Println("================================================================================")
@@ -63,15 +63,17 @@ func printQuickMenu() {
 	}
 	fmt.Printf(" Dispositivo detectado: %s (%s/%s)\n", deviceMode, runtime.GOOS, runtime.GOARCH)
 	fmt.Println("================================================================================")
-	fmt.Println(" Opciones disponibles:")
-	fmt.Println("   [1] Abrir Ventana de Escritorio (Desktop GUI ABM)")
-	fmt.Println("   [2] Iniciar Consola Web Embebida (http://localhost:8056)")
-	fmt.Println("   [3] Iniciar Chat Interactivo CLI (Terminal con herramientas)")
-	fmt.Println("   [4] Diagnostico de Estado y Salud (felix status)")
-	fmt.Println("   [5] Administrar Catalogo de Bots (felix bots)")
-	fmt.Println("   [6] Matriz de Lineas Telefonicas (felix numbers)")
-	fmt.Println("   [7] Administrar Bases de Datos SQLite (felix db)")
-	fmt.Println("   [8] Catalogo de APIs e Inferencia (felix apis)")
+	fmt.Println(" Flujo Principal:")
+	fmt.Println("   [1] Iniciar Chat Interactivo CLI (Felix Core y Asistentes)")
+	fmt.Println("   [2] Asistente de Configuracion y Proveedor LLM (Onboarding / Setup)")
+	fmt.Println("   [3] Abrir Ventana de Escritorio (Desktop Window & Chat)")
+	fmt.Println("   [4] Iniciar Consola Web Embebida (http://localhost:8056)")
+	fmt.Println()
+	fmt.Println(" Modulos y Diagnostico:")
+	fmt.Println("   [5] Diagnostico de Estado y Salud (Doctor / Status)")
+	fmt.Println("   [6] Administrar Catalogo de Bots (ABM y Configuracion)")
+	fmt.Println("   [7] Matriz de Lineas Telefonicas (felix numbers)")
+	fmt.Println("   [8] Administrar Bases de Datos SQLite (felix db)")
 	fmt.Println("   [9] Auditoria y Logs de Bots (felix logs)")
 	fmt.Println("   [0] Salir")
 	fmt.Println("--------------------------------------------------------------------------------")
@@ -104,38 +106,34 @@ func RunInteractiveMenu(configPath string) int {
 		first := strings.ToLower(parts[0])
 
 		switch first {
-		case "1", "desktop", "gui":
-			return CmdDesktop(parts[1:], configPath)
-		case "2", "web":
-			return CmdWeb(parts[1:], configPath)
-		case "3", "cli", "chat":
+		case "1", "chat", "cli":
 			return CmdChat(parts[1:], configPath)
-		case "4", "status":
+		case "2", "setup", "onboard", "config":
+			return CmdOnboard(parts[1:], configPath)
+		case "3", "desktop", "gui":
+			return CmdDesktop(parts[1:], configPath)
+		case "4", "web":
+			return CmdWeb(parts[1:], configPath)
+		case "5", "status", "doctor":
 			CmdStatus(configPath)
-		case "5", "bots", "bot":
+		case "6", "bots", "bot":
 			sub := []string{"list"}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdBots(sub, configPath)
-		case "6", "numbers", "number":
+		case "7", "numbers", "number":
 			sub := []string{"list"}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdNumbers(sub, configPath)
-		case "7", "db":
+		case "8", "db":
 			sub := []string{"status"}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdDB(sub, configPath)
-		case "8", "apis", "api":
-			sub := []string{"list"}
-			if len(parts) > 1 {
-				sub = parts[1:]
-			}
-			CmdAPIs(sub, configPath)
 		case "9", "logs":
 			sub := []string{"bots"}
 			if len(parts) > 1 {
@@ -167,6 +165,10 @@ func RunCLI(args []string, configPath string) int {
 	subArgs := args[1:]
 
 	switch cmd {
+	case "onboard", "setup":
+		return CmdOnboard(subArgs, configPath)
+	case "doctor":
+		return CmdStatus(configPath)
 	case "cli":
 		return CmdCLI(subArgs, configPath)
 	case "status":
@@ -695,16 +697,17 @@ func CmdConv(args []string, configPath string) int {
 }
 
 func CmdConfig(args []string, configPath string) int {
+	if len(args) == 0 {
+		return RunConfigMenu(configPath)
+	}
+
 	_, err := config.LoadConfig(configPath)
 	if err != nil {
 		fmt.Printf("Error cargando configuracion (%s): %v\n", configPath, err)
 		return 1
 	}
 
-	action := "show"
-	if len(args) > 0 {
-		action = strings.ToLower(args[0])
-	}
+	action := strings.ToLower(args[0])
 
 	switch action {
 	case "show":
@@ -1595,6 +1598,20 @@ func CmdChat(args []string, configPath string) int {
 	if err != nil {
 		fmt.Printf("Error cargando configuracion: %v\n", err)
 		return 1
+	}
+
+	if cfg.APIBase == "" && cfg.APIKey == "" {
+		fmt.Println("No se encontro un proveedor de inferencia configurado.")
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Deseas ejecutar el asistente de configuracion rapida (Onboarding) ahora? [S/n]: ")
+		resp, _ := reader.ReadString('\n')
+		resp = strings.ToLower(strings.TrimSpace(resp))
+		if resp == "" || resp == "s" || resp == "si" || resp == "y" {
+			if code := RunOnboardingWizard(configPath); code != 0 {
+				return code
+			}
+			cfg, _ = config.LoadConfig(configPath)
+		}
 	}
 
 	skillsDir := cfg.SkillsDir

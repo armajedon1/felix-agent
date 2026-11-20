@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"flag"
@@ -37,103 +36,9 @@ import (
 	"felix-go/internal/whatsapp"
 )
 
-func runSetupWizard(configPath string) {
-	fmt.Println()
-	fmt.Println("==============================================================")
-	fmt.Println("         FELIX - ASISTENTE AUTONOMO OPEN SOURCE               ")
-	fmt.Println("            Asistente de Configuracion Inicial                ")
-	fmt.Println("==============================================================")
-	fmt.Println()
-
-	reader := bufio.NewReader(os.Stdin)
-
-	cfg, _ := config.LoadConfig(configPath)
-	if cfg == nil {
-		cfg = config.DefaultConfig()
-	}
-
-	fmt.Println("Seleccione su proveedor de inferencia:")
-	fmt.Println("  1) Google Gemini (Recomendado - gemini-2.5-flash)")
-	fmt.Println("  2) OpenAI (gpt-4o)")
-	fmt.Println("  3) Groq Cloud (llama-3.3-70b-versatile + Whisper)")
-	fmt.Println("  4) Ollama Local (http://localhost:11434/v1)")
-	fmt.Println("  5) Antigravity Tools / Proxy Local (http://127.0.0.1:8045/v1)")
-	fmt.Println("  6) Endpoint Personalizado / Custom")
-	fmt.Print("Opcion [1-6, por defecto 1]: ")
-
-	opcion, _ := reader.ReadString('\n')
-	opcion = strings.TrimSpace(opcion)
-	if opcion == "" {
-		opcion = "1"
-	}
-
-	switch opcion {
-	case "1":
-		fmt.Print("\nIngrese su API Key de Google Gemini (de https://aistudio.google.com/): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		_ = cfg.ApplyPreset("gemini", inputKey, "", "")
-	case "2":
-		fmt.Print("\nIngrese su API Key de OpenAI (sk-...): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		_ = cfg.ApplyPreset("openai", inputKey, "", "")
-	case "3":
-		fmt.Print("\nIngrese su API Key de Groq (gsk_...): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		_ = cfg.ApplyPreset("groq", inputKey, "", "")
-	case "4":
-		_ = cfg.ApplyPreset("ollama", "", "", "")
-		fmt.Println("\nConfigurado para Ollama en http://localhost:11434/v1 con modelo llama3.")
-	case "5":
-		_ = cfg.ApplyPreset("antigravity", "", "", "")
-		fmt.Println("\nConfigurado para Antigravity Tools en http://127.0.0.1:8045/v1.")
-	default:
-		fmt.Printf("\n1. Ingrese la direccion del endpoint de inferencia (API Base)\n   [Por defecto: %s]: ", cfg.APIBase)
-		inputBase, _ := reader.ReadString('\n')
-		inputBase = strings.TrimSpace(inputBase)
-		if inputBase != "" {
-			cfg.APIBase = inputBase
-		}
-
-		fmt.Printf("\n2. Ingrese la clave de API (API Key) para inferencia:\n   (Para servidores locales sin autenticacion puede dejarlo vacio): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		if inputKey != "" {
-			cfg.APIKey = inputKey
-		}
-
-		fmt.Printf("\n3. Ingrese el modelo LLM a utilizar\n   [Por defecto: %s]: ", cfg.Model)
-		inputModel, _ := reader.ReadString('\n')
-		inputModel = strings.TrimSpace(inputModel)
-		if inputModel != "" {
-			cfg.Model = inputModel
-		}
-	}
-
-	if cfg.GroqAPIKey == "" && opcion != "3" {
-		fmt.Printf("\nIngrese la clave de Groq para transcripcion Whisper de notas de voz en WhatsApp\n   (Opcional, presione Enter para omitir): ")
-		inputGroq, _ := reader.ReadString('\n')
-		inputGroq = strings.TrimSpace(inputGroq)
-		if inputGroq != "" {
-			cfg.GroqAPIKey = inputGroq
-		}
-	}
-
-	if err := cfg.Save(configPath); err != nil {
-		fmt.Printf("\nError guardando configuracion: %v\n", err)
-		return
-	}
-
-	fmt.Printf("\nConfiguracion guardada exitosamente en %s\n", configPath)
-	fmt.Println("Ahora puede iniciar Felix con: ./bin/felix")
-	fmt.Println("==============================================================")
-}
-
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "init") {
-		runSetupWizard("config.json")
+	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "init" || os.Args[1] == "onboard") {
+		os.Exit(cli.RunOnboardingWizard("config.json"))
 		return
 	}
 
@@ -180,7 +85,7 @@ func main() {
 	flag.Parse()
 
 	if *setupFlag {
-		runSetupWizard(*configPath)
+		os.Exit(cli.RunOnboardingWizard(*configPath))
 		return
 	}
 

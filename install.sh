@@ -35,8 +35,9 @@ mkdir -p bin data/downloads data/backups data/avatars workspace/reports workspac
 
 # 5. Configurar archivo de configuracion inicial si no existe
 if [ ! -f config.json ]; then
-    echo "Generando config.json desde plantilla config.example.json..."
-    cp config.example.json config.json
+    if [ -f config.example.json ]; then
+        cp config.example.json config.json
+    fi
 fi
 
 # 6. Compilar el binario
@@ -92,12 +93,22 @@ echo "=============================================================="
 echo " El ejecutable 'felix' ya esta disponible en su terminal."
 echo ""
 echo " Opciones recomendadas para comenzar:"
-echo "   felix                  -> Menu interactivo y presentacion ASCII"
+echo "   felix                  -> Menu interactivo principal"
+echo "   felix chat             -> Chat interactivo con Felix Core y bots"
+echo "   felix onboard          -> Asistente de configuracion de proveedor IA"
 echo "   felix desktop          -> Ventana de escritorio con modulo de chat y ABM"
-echo "   felix chat             -> Chat interactivo en terminal con Felix y bots"
-echo "   felix chat <bot-id>    -> Chat directo con un bot especifico (ej: mosiah-varela)"
 echo "   felix web              -> Consola web en navegador (puerto 8056)"
-echo "   felix status           -> Estado de salud del sistema y modelos"
+echo "   felix status           -> Diagnostico de estado y modelos (doctor)"
 echo "   felix bots             -> Administrador de catalogo de bots"
 echo "   felix server           -> Iniciar servicio en segundo plano (daemon)"
 echo "=============================================================="
+
+# Iniciar asistente de configuracion si la terminal es interactiva y no esta configurado
+if [ -t 0 ] && [ -t 1 ]; then
+    echo ""
+    read -r -p "Desea iniciar el asistente de configuracion (Onboarding) ahora? [S/n]: " RUN_WIZARD || RUN_WIZARD="s"
+    RUN_WIZARD="$(echo "$RUN_WIZARD" | tr '[:upper:]' '[:lower:]')"
+    if [ "$RUN_WIZARD" = "" ] || [ "$RUN_WIZARD" = "s" ] || [ "$RUN_WIZARD" = "si" ] || [ "$RUN_WIZARD" = "y" ]; then
+        "$TARGET_DIR/felix" onboard
+    fi
+fi

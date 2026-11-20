@@ -64,34 +64,49 @@ sudo apt update && sudo apt install -y golang ffmpeg build-essential git
 
 ## Inicio Rápido y Modos de Uso
 
-### 1. Clonar e Instalar
+### 1. Instalación Rápida
 ```bash
 git clone https://github.com/m-leiva/felix-agent.git
 cd felix-agent
 ./install.sh
 ```
-El script compila el binario e instala `felix` automáticamente en `~/.local/bin/felix` (disponible globalmente en la terminal) y registra el lanzador de escritorio en entornos Linux con interfaz gráfica.
+El script compila el binario nativo, lo instala en `~/.local/bin/felix` (en el PATH del sistema), registra el acceso directo de escritorio y ejecuta automáticamente el asistente guiado de configuración (**Onboarding Wizard**). No es necesario editar manualmente ningún archivo JSON.
 
-### 2. Modos de Uso: Estación de Trabajo (PC) vs Servidor (Server Daemon)
+### 2. Configuración y Proveedores de IA (Onboarding Wizard)
+Para configurar o cambiar el proveedor de inteligencia artificial en cualquier momento de forma interactiva:
+```bash
+felix onboard          # Asistente paso a paso con verificacion de conexion en vivo
+felix config           # Menu interactivo para cambiar proveedor, modelo o canales
+```
+Proveedores soportados con configuración en un clic:
+* **Antigravity Tools Proxy Local** (`http://127.0.0.1:8045/v1`)
+* **OpenAI Oficial** (`GPT-4o`, `GPT-4o-mini`)
+* **Google Gemini** (`Gemini 2.5 / 3.5 Flash`)
+* **Anthropic Claude** (`Claude 3.5 Sonnet`)
+* **Groq Cloud LPU** (`Llama 3.3 70B`)
+* **Ollama Local** (`http://localhost:11434/v1`)
+* **Endpoints Personalizados** compatibles con el estándar OpenAI
+
+### 3. Modos de Uso: Estación de Trabajo (PC) vs Servidor (Server Daemon)
 
 #### Modo PC / Estación de Trabajo
 * **Menú Interactivo y Presentación ASCII:**
   ```bash
   felix
   ```
-  Al ejecutarse sin argumentos en una terminal, despliega el arte ASCII oficial, detecta el entorno y ofrece un menú interactivo rápido para acceder a todas las herramientas.
-* **Ventana de Escritorio (Desktop Window & Chat):**
-  ```bash
-  felix desktop
-  ```
-  Abre una ventana de aplicación de escritorio independiente (GTK nativa o Chromium App aislada, sin barra de direcciones web ni pestañas de navegador) con módulo integrado de **Chat en vivo** para interactuar con Félix Core y con cualquier bot registrado (ej. MosIAh), además de los paneles de gestión ABM de bots, líneas telefónicas, bases SQLite y streaming de logs.
+  Al ejecutarse sin argumentos en una terminal, despliega el menú principal interactivo para acceder a todas las funciones sin comandos complejos.
 * **Chat Interactivo en Terminal (CLI):**
   ```bash
   felix chat                    # Chat interactivo con Felix Core o selector de bots
   felix chat mosiah-varela      # Chat interactivo directo con el bot MosIAh
   felix chat mosiah-varela "Hola quiero agendar un turno"  # Peticion rapida directa
   ```
-  Dentro de la sesión interactiva puedes usar `:bots` para listar asistentes y `:bot <id>` para alternar en caliente entre Felix y cualquier bot comercial.
+  Dentro de la sesión puedes usar `:bots` para listar asistentes y `:bot <id>` para alternar en caliente entre Felix y cualquier bot comercial. Puedes pedirle a Felix en lenguaje natural que configure o modifique el comportamiento de tus bots y los cambios se guardan de inmediato.
+* **Ventana de Aplicación de Escritorio (Desktop Window & Chat):**
+  ```bash
+  felix desktop
+  ```
+  Abre una ventana de aplicación de escritorio independiente (GTK nativa o Chromium App aislada, sin barra de direcciones web ni pestañas de navegador) con módulo integrado de **Chat en vivo** para interactuar con Félix Core y con cualquier bot registrado (ej. MosIAh), además de los paneles de gestión ABM de bots, líneas telefónicas, bases SQLite y streaming de logs.
 * **Consola Web Embebida (para servidores remotos):**
   ```bash
   felix web
