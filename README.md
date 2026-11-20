@@ -66,7 +66,7 @@ sudo apt update && sudo apt install -y golang ffmpeg build-essential git
 
 ### 1. Clonar el Repositorio
 ```bash
-git clone https://github.com/armajedon1/felix-agent.git
+git clone https://github.com/m-leiva/felix-agent.git
 cd felix-agent
 ```
 

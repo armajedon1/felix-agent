@@ -72,7 +72,7 @@ func RunCLI(args []string, configPath string) int {
 func PrintVersion() {
 	fmt.Println("Felix Agent CLI v2.2.0 (Open Source Engine & Harness)")
 	fmt.Println("Arquitectura: linux/amd64 (Go 1.22+)")
-	fmt.Println("Repositorio: https://github.com/armajedon1/felix-agent")
+	fmt.Println("Repositorio: https://github.com/m-leiva/felix-agent")
 }
 
 func PrintHelp() {
