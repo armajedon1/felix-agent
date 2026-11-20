@@ -711,7 +711,7 @@
       </div>
       <div class="env-status-row">
         <span id="systemStatusBadge" class="badge badge-success">ONLINE</span>
-        <span style="color:#64748b; font-size:11px; font-weight:700;">[ARG] SOBERANIA</span>
+        <button class="btn" style="padding: 2px 8px; font-size: 10px;" onclick="checkSystemUpdate()">Actualizar</button>
       </div>
     </div>
   </aside>
@@ -2049,6 +2049,35 @@
       term.innerHTML += `<div style="color:#f87171;">Error: ${err.message}</div>`;
     }
     term.scrollTop = term.scrollHeight;
+  }
+
+  async function checkSystemUpdate() {
+    try {
+      const res = await fetch((activeApiBase || '') + '/api/v1/system/update/check');
+      const data = await res.json();
+      if (data.error) {
+        alert('Error comprobando actualizaciones: ' + data.error);
+        return;
+      }
+      if (data.up_to_date) {
+        alert(`Felix se encuentra en la version mas reciente (${data.current_commit}).`);
+        return;
+      }
+      const commitsList = (data.commits || []).slice(0, 5).join('\n  - ');
+      const confirmUpdate = confirm(`Nueva actualizacion disponible en GitHub (${data.latest_commit}):\n\n  - ${commitsList}\n\nDeseas descargar los cambios y recompilar Felix ahora?`);
+      if (!confirmUpdate) return;
+
+      const applyRes = await fetch((activeApiBase || '') + '/api/v1/system/update/apply', { method: 'POST' });
+      const applyData = await applyRes.json();
+      if (applyData.error) {
+        alert('Error actualizando: ' + applyData.error);
+        return;
+      }
+      alert(`Actualizacion completada exitosamente a la version ${applyData.updated_commit}. Se recargara la interfaz.`);
+      window.location.reload();
+    } catch (err) {
+      alert('Error en el proceso de actualizacion: ' + err.message);
+    }
   }
 
   window.addEventListener('DOMContentLoaded', () => {

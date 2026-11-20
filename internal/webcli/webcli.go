@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -210,6 +211,10 @@ func (s *Server) Start() (int, error) {
 	mux.HandleFunc("/api/v1/chat", s.handleChat)
 	mux.HandleFunc("/api/v1/chat/history", s.handleChatHistory)
 	mux.HandleFunc("/api/v1/chat/clear", s.handleChatClear)
+
+	// Endpoints REST - Actualizacion del Sistema
+	mux.HandleFunc("/api/v1/system/update/check", s.handleSystemUpdateCheck)
+	mux.HandleFunc("/api/v1/system/update/apply", s.handleSystemUpdateApply)
 
 	// Asignacion de puerto con fallback automatico si 8056 esta ocupado
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", s.port))
@@ -1503,4 +1508,87 @@ func (s *Server) handleChatClear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (s *Server) handleSystemUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	repoDir := config.FindRepoDir()
+	if repoDir == "" {
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "repositorio no encontrado"})
+		return
+	}
+
+	fetchCmd := exec.Command("git", "fetch", "origin", "main")
+	fetchCmd.Dir = repoDir
+	_ = fetchCmd.Run()
+
+	localCmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	localCmd.Dir = repoDir
+	localOut, _ := localCmd.Output()
+	localRev := strings.TrimSpace(string(localOut))
+
+	remoteCmd := exec.Command("git", "rev-parse", "--short", "origin/main")
+	remoteCmd.Dir = repoDir
+	remoteOut, _ := remoteCmd.Output()
+	remoteRev := strings.TrimSpace(string(remoteOut))
+
+	logCmd := exec.Command("git", "log", "HEAD..origin/main", "--oneline")
+	logCmd.Dir = repoDir
+	logOut, _ := logCmd.Output()
+	rawLogs := strings.TrimSpace(string(logOut))
+	var logLines []string
+	if rawLogs != "" {
+		logLines = strings.Split(rawLogs, "\n")
+	} else {
+		logLines = []string{}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"up_to_date":     localRev == remoteRev,
+		"current_commit": localRev,
+		"latest_commit":  remoteRev,
+		"commits":        logLines,
+	})
+}
+
+func (s *Server) handleSystemUpdateApply(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	repoDir := config.FindRepoDir()
+	if repoDir == "" {
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "repositorio no encontrado"})
+		return
+	}
+
+	pullCmd := exec.Command("git", "pull", "origin", "main")
+	pullCmd.Dir = repoDir
+	if out, err := pullCmd.CombinedOutput(); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("git pull fallo: %v (%s)", err, string(out))})
+		return
+	}
+
+	binPath := filepath.Join(repoDir, "bin", "felix")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "cmd/felix/main.go")
+	buildCmd.Dir = repoDir
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": fmt.Sprintf("compilacion fallo: %v (%s)", err, string(out))})
+		return
+	}
+
+	targetBin := filepath.Join(os.Getenv("HOME"), ".local", "bin", "felix")
+	_ = exec.Command("install", "-m", "755", binPath, targetBin).Run()
+
+	revCmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	revCmd.Dir = repoDir
+	revOut, _ := revCmd.Output()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"updated_commit": strings.TrimSpace(string(revOut)),
+		"message":        "Felix actualizado exitosamente",
+	})
 }

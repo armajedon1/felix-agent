@@ -257,3 +257,41 @@ func (c *Config) ApplyPreset(provider, apiKey, model, savePath string) error {
 	}
 	return nil
 }
+
+// FindRepoDir localiza el directorio raiz del repositorio fuente de Felix.
+func FindRepoDir() string {
+	if IsFelixRepo(".") {
+		abs, _ := filepath.Abs(".")
+		return abs
+	}
+
+	home := os.Getenv("HOME")
+	candidates := []string{
+		filepath.Join(home, "felix-agent"),
+		filepath.Join(home, "felix-open-source"),
+		filepath.Join(home, "felix"),
+		"/home/matias/felix-open-source",
+		"/home/matias/felix-agent",
+	}
+
+	for _, c := range candidates {
+		if IsFelixRepo(c) {
+			return c
+		}
+	}
+
+	return ""
+}
+
+// IsFelixRepo verifica si el directorio dado contiene un repositorio valido de Felix.
+func IsFelixRepo(dir string) bool {
+	gitDir := filepath.Join(dir, ".git")
+	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+		return false
+	}
+	mainGo := filepath.Join(dir, "cmd", "felix", "main.go")
+	if _, err := os.Stat(mainGo); err != nil {
+		return false
+	}
+	return true
+}

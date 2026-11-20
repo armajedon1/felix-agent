@@ -32,7 +32,7 @@ import (
 
 func IsCLICommand(arg string) bool {
 	switch strings.ToLower(arg) {
-	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help", "onboard", "setup", "doctor":
+	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help", "onboard", "setup", "doctor", "update", "upgrade":
 		return true
 	default:
 		return false
@@ -75,9 +75,10 @@ func printQuickMenu() {
 	fmt.Println("   [7] Matriz de Lineas Telefonicas (felix numbers)")
 	fmt.Println("   [8] Administrar Bases de Datos SQLite (felix db)")
 	fmt.Println("   [9] Auditoria y Logs de Bots (felix logs)")
+	fmt.Println("   [u] Comprobar y Aplicar Actualizaciones (felix update)")
 	fmt.Println("   [0] Salir")
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Print(" Seleccione una opcion [0-9] o ingrese un comando directo (o 'help'): ")
+	fmt.Print(" Seleccione una opcion [0-9/u] o ingrese un comando directo (o 'help'): ")
 }
 
 func RunInteractiveMenu(configPath string) int {
@@ -140,6 +141,9 @@ func RunInteractiveMenu(configPath string) int {
 				sub = parts[1:]
 			}
 			CmdLogs(sub, configPath)
+		case "u", "update", "upgrade":
+			CmdUpdate(parts[1:], configPath)
+			printQuickMenu()
 		case "help", "-h", "--help", "?":
 			PrintHelp()
 		case "clear":
@@ -165,6 +169,8 @@ func RunCLI(args []string, configPath string) int {
 	subArgs := args[1:]
 
 	switch cmd {
+	case "update", "upgrade":
+		return CmdUpdate(subArgs, configPath)
 	case "onboard", "setup":
 		return CmdOnboard(subArgs, configPath)
 	case "doctor":
