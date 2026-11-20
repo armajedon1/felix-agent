@@ -80,21 +80,23 @@ El script compila el binario e instala `felix` automáticamente en `~/.local/bin
   felix
   ```
   Al ejecutarse sin argumentos en una terminal, despliega el arte ASCII oficial, detecta el entorno y ofrece un menú interactivo rápido para acceder a todas las herramientas.
-* **Ventana de Escritorio (Desktop GUI):**
+* **Ventana de Escritorio (Desktop Window & Chat):**
   ```bash
   felix desktop
   ```
-  Abre una ventana de aplicación nativa conectada a la instancia local o a un servidor remoto, con paneles visuales completos para el alta, baja y modificación (ABM) de bots, gestión de números, bases SQLite y streaming de logs.
-* **Consola Web Embebida:**
+  Abre una ventana de aplicación de escritorio independiente (GTK nativa o Chromium App aislada, sin barra de direcciones web ni pestañas de navegador) con módulo integrado de **Chat en vivo** para interactuar con Félix Core y con cualquier bot registrado (ej. MosIAh), además de los paneles de gestión ABM de bots, líneas telefónicas, bases SQLite y streaming de logs.
+* **Chat Interactivo en Terminal (CLI):**
+  ```bash
+  felix chat                    # Chat interactivo con Felix Core o selector de bots
+  felix chat mosiah-varela      # Chat interactivo directo con el bot MosIAh
+  felix chat mosiah-varela "Hola quiero agendar un turno"  # Peticion rapida directa
+  ```
+  Dentro de la sesión interactiva puedes usar `:bots` para listar asistentes y `:bot <id>` para alternar en caliente entre Felix y cualquier bot comercial.
+* **Consola Web Embebida (para servidores remotos):**
   ```bash
   felix web
   ```
-  Inicia la consola web embebida ultraligera en `http://localhost:8056`.
-* **Consola de Chat Interactivo CLI:**
-  ```bash
-  felix cli
-  ```
-  Abre una sesión de ingeniería y chat interactivo en terminal con el arnés nativo de herramientas.
+  Inicia la interfaz de gestión y chat en formato web ultraligero en `http://localhost:8056`.
 * **Gestión Directa por Subcomandos CLI:**
   ```bash
   felix bots list

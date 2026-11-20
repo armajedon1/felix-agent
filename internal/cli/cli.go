@@ -1468,16 +1468,73 @@ func CmdDesktop(args []string, configPath string) int {
 }
 
 func openAppWindow(url string) {
+	tempProfile := filepath.Join(os.TempDir(), "felix-desktop-profile")
+	_ = os.MkdirAll(tempProfile, 0755)
+
 	if runtime.GOOS == "windows" {
+		edgeCommands := [][]string{
+			{"msedge", "--app=" + url, "--user-data-dir=" + tempProfile, "--window-size=1280,850", "--no-first-run"},
+			{"chrome", "--app=" + url, "--user-data-dir=" + tempProfile, "--window-size=1280,850", "--no-first-run"},
+			{"cmd", "/c", "start", url},
+		}
+		for _, cmd := range edgeCommands {
+			if _, err := exec.LookPath(cmd[0]); err == nil {
+				if err := exec.Command(cmd[0], cmd[1:]...).Start(); err == nil {
+					return
+				}
+			}
+		}
 		_ = exec.Command("cmd", "/c", "start", url).Start()
 		return
 	}
 
+	// 1. Probar ventana nativa GTK WebKit (formato de aplicacion de escritorio sin navegador web)
+	gtkScript := filepath.Join(os.TempDir(), "felix_desktop_window.py")
+	gtkPyCode := `import sys, os
+try:
+    import gi
+    try:
+        gi.require_version('Gtk', '3.0')
+        gi.require_version('WebKit2', '4.1')
+    except Exception:
+        gi.require_version('Gtk', '3.0')
+        gi.require_version('WebKit2', '4.0')
+    from gi.repository import Gtk, WebKit2
+    class FelixWindow(Gtk.Window):
+        def __init__(self, target_url):
+            super().__init__(title="Felix - Centro de Control y Chat")
+            self.set_default_size(1280, 850)
+            self.set_position(Gtk.WindowPosition.CENTER)
+            self.connect("destroy", Gtk.main_quit)
+            webview = WebKit2.WebView()
+            webview.load_uri(target_url)
+            self.add(webview)
+            self.show_all()
+    if len(sys.argv) > 1:
+        app = FelixWindow(sys.argv[1])
+        Gtk.main()
+        sys.exit(0)
+except Exception:
+    sys.exit(1)
+`
+	_ = os.WriteFile(gtkScript, []byte(gtkPyCode), 0755)
+	if _, err := exec.LookPath("python3"); err == nil {
+		checkCmd := exec.Command("python3", "-c", "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk, WebKit2")
+		if err := checkCmd.Run(); err == nil {
+			if err := exec.Command("python3", gtkScript, url).Start(); err == nil {
+				return
+			}
+		}
+	}
+
+	// 2. Probar Chromium/Chrome/Brave/Edge en modo aplicacion de escritorio (--app, sin tabs ni barra de url)
 	appCommands := [][]string{
-		{"google-chrome", "--app=" + url},
-		{"chromium-browser", "--app=" + url},
-		{"chromium", "--app=" + url},
-		{"brave-browser", "--app=" + url},
+		{"chromium", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
+		{"google-chrome", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
+		{"brave-browser", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
+		{"microsoft-edge", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
+		{"chromium-browser", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
+		{"firefox", "--new-window", url},
 		{"xdg-open", url},
 	}
 
@@ -1602,9 +1659,12 @@ func CmdChat(args []string, configPath string) int {
 	}
 
 	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
-	if botStore, errStore := botfactory.NewStorage(botsDBPath); errStore == nil {
+	var botStore *botfactory.Storage
+	var botMgr *botfactory.Manager
+	if bs, errStore := botfactory.NewStorage(botsDBPath); errStore == nil {
+		botStore = bs
 		defer botStore.Close()
-		botMgr := botfactory.NewManager(botStore, engine)
+		botMgr = botfactory.NewManager(botStore, engine)
 		reg.Register(&tools.BotFactoryTool{Manager: botMgr})
 	}
 
@@ -1613,38 +1673,75 @@ func CmdChat(args []string, configPath string) int {
 		IsAdmin: true,
 	})
 
+	activeBot := "felix"
 	if len(args) > 0 {
-		prompt := strings.Join(args, " ")
-		fmt.Printf("=== Felix CLI: Ejecutando peticion ===\n%s\n\n", prompt)
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-		defer cancel()
-		reply, err := engine.Run(ctx, "cli-session", prompt, contextMem)
-		if err != nil {
-			fmt.Printf("Error en ejecucion: %v\n", err)
-			return 1
+		first := args[0]
+		if botStore != nil {
+			if _, err := botStore.GetBot(first); err == nil {
+				activeBot = first
+				args = args[1:]
+			}
 		}
-		fmt.Println("=== Respuesta de Felix ===")
-		fmt.Println(reply)
-		return 0
+		if len(args) > 0 {
+			prompt := strings.Join(args, " ")
+			fmt.Printf("=== Chat con %s ===\n%s\n\n", activeBot, prompt)
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+			if activeBot == "felix" {
+				reply, err := engine.Run(ctx, "cli-session", prompt, contextMem)
+				if err != nil {
+					fmt.Printf("Error en ejecucion: %v\n", err)
+					return 1
+				}
+				fmt.Println("=== Respuesta de Felix ===")
+				fmt.Println(reply)
+			} else {
+				res, err := botMgr.Chat(ctx, activeBot, "cli-session", prompt)
+				if err != nil {
+					fmt.Printf("Error en ejecucion: %v\n", err)
+					return 1
+				}
+				fmt.Printf("=== Respuesta de %s ===\n", activeBot)
+				fmt.Println(res.Reply)
+				if res.Order != nil {
+					fmt.Printf("\n[PEDIDO REGISTRADO: Total $%.2f]\n", res.Order.Total)
+				}
+				if res.Appointment != nil {
+					fmt.Printf("\n[TURNO AGENDADO: %s el %s]\n", res.Appointment.Service, res.Appointment.StartTime.Format("2006-01-02 15:04"))
+				}
+			}
+			return 0
+		}
 	}
 
 	PrintBanner()
 	fmt.Printf("Modelo LLM: %s | Workspace: %s\n", cfg.Model, cfg.WorkspaceDir)
 	fmt.Printf("Herramientas activas: %d registradas\n", len(reg.GetOpenAISchemas()))
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Println("Consola de Evaluacion y Pruebas Locales (PC)")
-	fmt.Println("Escribe tu peticion tecnica o consulta en lenguaje natural.")
+	fmt.Println("Consola de Chat y Evaluacion (PC y Servidores)")
+	fmt.Println("Interactua con Felix Core o con cualquiera de tus bots especializados.")
 	fmt.Println("Comandos especiales:")
-	fmt.Println("  :tools       Lista todas las herramientas activas en esta sesion")
-	fmt.Println("  :model       Muestra el modelo LLM y endpoint configurado")
+	fmt.Println("  :bots        Lista todos los bots y lineas registradas")
+	fmt.Println("  :bot <id>    Cambia de asistente (ej. ':bot mosiah-varela' o ':bot felix')")
+	fmt.Println("  :tools       Lista herramientas disponibles en Felix Core")
+	fmt.Println("  :model       Muestra la configuracion del proveedor LLM")
 	fmt.Println("  :clear       Limpia la pantalla de la terminal")
 	fmt.Println("  :help        Muestra los atajos de la consola")
 	fmt.Println("  :exit        Finaliza la sesion interactiva (o 'salir', 'quit')")
 	fmt.Println("--------------------------------------------------------------------------------")
+	if botStore != nil {
+		if bList, err := botStore.ListBots(); err == nil && len(bList) > 0 {
+			fmt.Printf("Asistentes listos: [felix]")
+			for _, b := range bList {
+				fmt.Printf(", [%s]", b.ID)
+			}
+			fmt.Println()
+		}
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("felix [cli]> ")
+		fmt.Printf("felix [%s]> ", activeBot)
 		line, _ := reader.ReadString('\n')
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -1661,11 +1758,50 @@ func CmdChat(args []string, configPath string) int {
 		}
 		if line == ":help" {
 			fmt.Println("Comandos de la consola CLI:")
+			fmt.Println("  :bots        Lista asistentes y lineas telefonicas")
+			fmt.Println("  :bot <id>    Cambia el asistente activo (ej: :bot mosiah-varela)")
 			fmt.Println("  :tools       Lista el catalogo de herramientas disponibles")
 			fmt.Println("  :model       Muestra la configuracion del proveedor LLM")
 			fmt.Println("  :clear       Limpia la pantalla")
 			fmt.Println("  :exit        Sale de la consola interactiva")
-			fmt.Println("Cualquier otro texto se envia a Felix para su analisis y ejecucion.")
+			continue
+		}
+		if line == ":bots" {
+			fmt.Println("Asistentes registrados en el sistema:")
+			fmt.Println("  - felix: Felix Core (DevOps, Ingenieria y SysAdmin)")
+			if botStore != nil {
+				if bList, err := botStore.ListBots(); err == nil {
+					for _, b := range bList {
+						num := b.PhoneNumber
+						if num == "" {
+							num = "Sin linea"
+						}
+						st := "OFFLINE"
+						if b.Status == "active" || b.IsActive {
+							st = "ONLINE"
+						}
+						fmt.Printf("  - %s: %s [%s] (Linea: %s)\n", b.ID, b.Name, st, num)
+					}
+				}
+			}
+			fmt.Println("\nUsa ':bot <id>' para cambiar el asistente.")
+			continue
+		}
+		if strings.HasPrefix(line, ":bot ") {
+			target := strings.TrimSpace(strings.TrimPrefix(line, ":bot "))
+			if target == "felix" {
+				activeBot = "felix"
+				fmt.Println("Asistente cambiado a: Felix Core")
+				continue
+			}
+			if botStore != nil {
+				if b, err := botStore.GetBot(target); err == nil && b != nil {
+					activeBot = b.ID
+					fmt.Printf("Asistente cambiado a: %s (%s)\n", b.Name, b.ID)
+					continue
+				}
+			}
+			fmt.Printf("No se encontro el bot '%s'. Escribe ':bots' para ver la lista.\n", target)
 			continue
 		}
 		if line == ":model" {
@@ -1694,14 +1830,30 @@ func CmdChat(args []string, configPath string) int {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-		reply, err := engine.Run(ctx, "cli-session", line, contextMem)
-		cancel()
-
-		if err != nil {
-			fmt.Printf("Error: %v\n\n", err)
-			continue
+		if activeBot == "felix" {
+			reply, err := engine.Run(ctx, "cli-session", line, contextMem)
+			cancel()
+			if err != nil {
+				fmt.Printf("Error: %v\n\n", err)
+				continue
+			}
+			fmt.Printf("\n%s\n\n", reply)
+		} else {
+			res, err := botMgr.Chat(ctx, activeBot, "cli-session", line)
+			cancel()
+			if err != nil {
+				fmt.Printf("Error: %v\n\n", err)
+				continue
+			}
+			fmt.Printf("\n%s\n", res.Reply)
+			if res.Order != nil {
+				fmt.Printf("[PEDIDO REGISTRADO: Total $%.2f]\n", res.Order.Total)
+			}
+			if res.Appointment != nil {
+				fmt.Printf("[TURNO AGENDADO: %s el %s]\n", res.Appointment.Service, res.Appointment.StartTime.Format("2006-01-02 15:04"))
+			}
+			fmt.Println()
 		}
-		fmt.Printf("\n%s\n\n", reply)
 	}
 
 	return 0

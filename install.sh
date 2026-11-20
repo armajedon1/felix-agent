@@ -61,14 +61,22 @@ if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
     fi
 fi
 
-# 8. Integracion de escritorio (Linux Desktop)
+# 8. Verificacion de soporte para ventana de escritorio nativa (Linux)
+if [ "$OS" = "Linux" ]; then
+    if ! command -v chromium &>/dev/null && ! command -v google-chrome &>/dev/null && ! python3 -c "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk, WebKit2" &>/dev/null 2>&1; then
+        echo "[Aviso] Para ejecutar 'felix desktop' como ventana nativa independiente sin abrir navegador:"
+        echo "        sudo apt update && sudo apt install -y gir1.2-webkit2-4.1"
+    fi
+fi
+
+# 9. Integracion de escritorio (Linux Desktop)
 DESKTOP_DIR="$HOME/.local/share/applications"
 if [ -d "$DESKTOP_DIR" ] || [ -n "${XDG_CURRENT_DESKTOP:-}" ]; then
     mkdir -p "$DESKTOP_DIR"
     cat <<EOF > "$DESKTOP_DIR/felix.desktop"
 [Desktop Entry]
-Name=Felix Agent
-Comment=Consola y Panel de Control de Felix Agent
+Name=Felix Desktop
+Comment=Centro de Control, Chat y Administracion de Bots
 Exec=$TARGET_DIR/felix desktop
 Icon=utilities-terminal
 Terminal=false
@@ -85,9 +93,10 @@ echo " El ejecutable 'felix' ya esta disponible en su terminal."
 echo ""
 echo " Opciones recomendadas para comenzar:"
 echo "   felix                  -> Menu interactivo y presentacion ASCII"
-echo "   felix desktop          -> Ventana de escritorio con panel ABM"
+echo "   felix desktop          -> Ventana de escritorio con modulo de chat y ABM"
+echo "   felix chat             -> Chat interactivo en terminal con Felix y bots"
+echo "   felix chat <bot-id>    -> Chat directo con un bot especifico (ej: mosiah-varela)"
 echo "   felix web              -> Consola web en navegador (puerto 8056)"
-echo "   felix cli              -> Consola de chat interactivo en terminal"
 echo "   felix status           -> Estado de salud del sistema y modelos"
 echo "   felix bots             -> Administrador de catalogo de bots"
 echo "   felix server           -> Iniciar servicio en segundo plano (daemon)"

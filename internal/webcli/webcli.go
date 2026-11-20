@@ -1,6 +1,8 @@
 package webcli
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -36,18 +38,107 @@ type Server struct {
 	listener   net.Listener
 	mu         sync.RWMutex
 	clients    map[chan botfactory.BotLogEntry]bool
+	completer  botfactory.LLMCompleter
+	botMgr     *botfactory.Manager
+}
+
+type SimpleCompleter struct {
+	apiBase string
+	apiKey  string
+	model   string
+	client  *http.Client
+}
+
+func NewSimpleCompleter(apiBase, apiKey, model string) *SimpleCompleter {
+	if apiBase == "" {
+		apiBase = "http://127.0.0.1:8045/v1"
+	}
+	if model == "" {
+		model = "gemini-2.5-flash"
+	}
+	return &SimpleCompleter{
+		apiBase: strings.TrimSuffix(apiBase, "/"),
+		apiKey:  apiKey,
+		model:   model,
+		client:  &http.Client{Timeout: 90 * time.Second},
+	}
+}
+
+func (c *SimpleCompleter) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	reqBody := map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": userPrompt},
+		},
+		"temperature": 0.2,
+	}
+	payload, _ := json.Marshal(reqBody)
+
+	url := c.apiBase + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error conectando a endpoint LLM (%s): %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("error HTTP %d del LLM: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var res struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(bodyBytes, &res); err != nil {
+		return "", fmt.Errorf("error decodificando respuesta LLM: %w", err)
+	}
+	if len(res.Choices) == 0 {
+		return "", fmt.Errorf("el LLM no retorno opciones de respuesta")
+	}
+
+	content := res.Choices[0].Message.Content
+	for {
+		start := strings.Index(content, "<think>")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(content, "</think>")
+		if end == -1 {
+			break
+		}
+		content = strings.TrimSpace(content[:start] + content[end+len("</think>"):])
+	}
+	return strings.TrimSpace(content), nil
 }
 
 func NewServer(port int, storage *botfactory.Storage, cfg *config.Config, dataDir string) *Server {
 	if port <= 0 {
 		port = 8056
 	}
+	completer := NewSimpleCompleter(cfg.APIBase, cfg.APIKey, cfg.Model)
+	botMgr := botfactory.NewManager(storage, completer)
 	return &Server{
-		port:    port,
-		storage: storage,
-		cfg:     cfg,
-		dataDir: dataDir,
-		clients: make(map[chan botfactory.BotLogEntry]bool),
+		port:      port,
+		storage:   storage,
+		cfg:       cfg,
+		dataDir:   dataDir,
+		clients:   make(map[chan botfactory.BotLogEntry]bool),
+		completer: completer,
+		botMgr:    botMgr,
 	}
 }
 
@@ -114,6 +205,11 @@ func (s *Server) Start() (int, error) {
 	mux.HandleFunc("/api/v1/logs/bots", s.handleLogs)
 	mux.HandleFunc("/api/v1/logs/stream", s.handleLogStream)
 	mux.HandleFunc("/api/v1/command", s.handleCommand)
+
+	// Endpoints REST - Chat Interactivo
+	mux.HandleFunc("/api/v1/chat", s.handleChat)
+	mux.HandleFunc("/api/v1/chat/history", s.handleChatHistory)
+	mux.HandleFunc("/api/v1/chat/clear", s.handleChatClear)
 
 	// Asignacion de puerto con fallback automatico si 8056 esta ocupado
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", s.port))
@@ -1194,4 +1290,217 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	default:
 		fmt.Fprintf(w, "Comando '%s' no reconocido. Escriba 'help' para ver los comandos validos.", cmd)
 	}
+}
+
+func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		BotID     string `json:"bot_id"`
+		SessionID string `json:"session_id"`
+		Message   string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"JSON invalido"}`, http.StatusBadRequest)
+		return
+	}
+
+	req.Message = strings.TrimSpace(req.Message)
+	if req.Message == "" {
+		http.Error(w, `{"error":"el mensaje no puede estar vacio"}`, http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" {
+		req.SessionID = "desktop-session"
+	}
+	if req.BotID == "" {
+		req.BotID = "felix"
+	}
+
+	start := time.Now()
+
+	if req.BotID == "felix" {
+		systemPrompt := s.cfg.SystemPrompt
+		if systemPrompt == "" {
+			systemPrompt = "Eres Felix, asistente autonomo de ingenieria, DevOps y administracion de sistemas Linux."
+		}
+
+		sessionDBPath := filepath.Join(s.dataDir, "sessions.db")
+		recentHistory := ""
+		if sdb, err := sql.Open("sqlite", "file:"+sessionDBPath+"?_pragma=busy_timeout(1000)"); err == nil {
+			rows, qErr := sdb.Query("SELECT role, content FROM session_messages WHERE session_id = ? ORDER BY id DESC LIMIT 6", req.SessionID)
+			if qErr == nil {
+				type msgPair struct{ role, content string }
+				var histList []msgPair
+				for rows.Next() {
+					var r, c string
+					if err := rows.Scan(&r, &c); err == nil {
+						histList = append(histList, msgPair{role: r, content: c})
+					}
+				}
+				rows.Close()
+				for i := len(histList) - 1; i >= 0; i-- {
+					recentHistory += fmt.Sprintf("[%s]: %s\n", strings.ToUpper(histList[i].role), histList[i].content)
+				}
+			}
+			sdb.Close()
+		}
+
+		userPrompt := req.Message
+		if recentHistory != "" {
+			userPrompt = "Historial reciente de la conversacion:\n" + recentHistory + "\nUsuario: " + req.Message
+		}
+
+		reply, err := s.completer.Complete(r.Context(), systemPrompt, userPrompt)
+		latency := time.Since(start).Milliseconds()
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		if sdb, err := sql.Open("sqlite", sessionDBPath); err == nil {
+			_, _ = sdb.Exec("INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, 'user', ?, CURRENT_TIMESTAMP)", req.SessionID, req.Message)
+			_, _ = sdb.Exec("INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, 'assistant', ?, CURRENT_TIMESTAMP)", req.SessionID, reply)
+			sdb.Close()
+		}
+
+		if s.storage != nil {
+			_ = s.storage.LogEvent(&botfactory.BotLogEntry{
+				BotID:        "felix",
+				Level:        "INFO",
+				Direction:    "OUT",
+				SenderNumber: req.SessionID,
+				Message:      reply,
+				LatencyMs:    latency,
+			})
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"bot_id":     "felix",
+			"reply":      reply,
+			"latency_ms": latency,
+		})
+		return
+	}
+
+	chatRes, err := s.botMgr.Chat(r.Context(), req.BotID, req.SessionID, req.Message)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	if s.storage != nil {
+		_ = s.storage.LogEvent(&botfactory.BotLogEntry{
+			BotID:        req.BotID,
+			Level:        "INFO",
+			Direction:    "OUT",
+			SenderNumber: req.SessionID,
+			Message:      chatRes.Reply,
+			LatencyMs:    latency,
+		})
+	}
+
+	respMap := map[string]any{
+		"bot_id":     req.BotID,
+		"reply":      chatRes.Reply,
+		"latency_ms": latency,
+	}
+	if chatRes.Order != nil {
+		respMap["order"] = chatRes.Order
+	}
+	if chatRes.Appointment != nil {
+		respMap["appointment"] = chatRes.Appointment
+	}
+	_ = json.NewEncoder(w).Encode(respMap)
+}
+
+func (s *Server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	botID := r.URL.Query().Get("bot_id")
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		sessionID = "desktop-session"
+	}
+	if botID == "" {
+		botID = "felix"
+	}
+
+	type ChatMsg struct {
+		Role      string `json:"role"`
+		Content   string `json:"content"`
+		CreatedAt string `json:"created_at"`
+	}
+	msgs := []ChatMsg{}
+
+	if botID == "felix" {
+		sessionDBPath := filepath.Join(s.dataDir, "sessions.db")
+		if sdb, err := sql.Open("sqlite", "file:"+sessionDBPath+"?_pragma=busy_timeout(1000)"); err == nil {
+			defer sdb.Close()
+			rows, err := sdb.Query("SELECT role, content, created_at FROM session_messages WHERE session_id = ? ORDER BY id ASC LIMIT 50", sessionID)
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var m ChatMsg
+					if err := rows.Scan(&m.Role, &m.Content, &m.CreatedAt); err == nil {
+						msgs = append(msgs, m)
+					}
+				}
+			}
+		}
+	} else {
+		botsDBPath := filepath.Join(s.dataDir, "bots.db")
+		if bdb, err := sql.Open("sqlite", "file:"+botsDBPath+"?_pragma=busy_timeout(1000)"); err == nil {
+			defer bdb.Close()
+			rows, err := bdb.Query("SELECT role, content, created_at FROM bot_messages WHERE bot_id = ? AND session_id = ? ORDER BY id ASC LIMIT 50", botID, sessionID)
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var m ChatMsg
+					if err := rows.Scan(&m.Role, &m.Content, &m.CreatedAt); err == nil {
+						msgs = append(msgs, m)
+					}
+				}
+			}
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(msgs)
+}
+
+func (s *Server) handleChatClear(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		BotID     string `json:"bot_id"`
+		SessionID string `json:"session_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.SessionID == "" {
+		req.SessionID = "desktop-session"
+	}
+
+	if req.BotID == "felix" {
+		sessionDBPath := filepath.Join(s.dataDir, "sessions.db")
+		if sdb, err := sql.Open("sqlite", sessionDBPath); err == nil {
+			_, _ = sdb.Exec("DELETE FROM session_messages WHERE session_id = ?", req.SessionID)
+			sdb.Close()
+		}
+	} else {
+		botsDBPath := filepath.Join(s.dataDir, "bots.db")
+		if bdb, err := sql.Open("sqlite", botsDBPath); err == nil {
+			_, _ = bdb.Exec("DELETE FROM bot_messages WHERE bot_id = ? AND session_id = ?", req.BotID, req.SessionID)
+			bdb.Close()
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
