@@ -20,6 +20,7 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+	"github.com/mdp/qrterminal/v3"
 
 	"felix-go/internal/agent"
 	"felix-go/internal/botfactory"
@@ -1154,62 +1155,207 @@ func CmdNumbers(args []string, configPath string) int {
 	}
 	defer store.Close()
 
+	reader := bufio.NewReader(os.Stdin)
 	action := "list"
 	if len(args) > 0 {
 		action = strings.ToLower(args[0])
+	} else {
+		fmt.Println("================================================================================")
+		fmt.Println("             ADMINISTRACION DE CANALES Y LINEAS DE BOTS                         ")
+		fmt.Println("================================================================================")
+		fmt.Println("  [1] Listar Canales y Lineas Actuales")
+		fmt.Println("  [2] Vincular WhatsApp por Codigo de Emparejamiento (Pairing Code)")
+		fmt.Println("  [3] Mostrar Codigo QR de WhatsApp en Terminal")
+		fmt.Println("  [4] Vincular Bot de Telegram con Token de @BotFather")
+		fmt.Println("  [5] Desvincular Canal de un Bot")
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Print("Seleccione una opcion [1-5] (Enter para listar): ")
+		opt, _ := reader.ReadString('\n')
+		opt = strings.TrimSpace(opt)
+		switch opt {
+		case "2":
+			action = "pair"
+		case "3":
+			action = "qr"
+		case "4":
+			action = "telegram"
+		case "5":
+			action = "release"
+		default:
+			action = "list"
+		}
 	}
 
 	switch action {
 	case "list":
 		numbers, err := store.ListNumbers()
 		if err != nil {
-			fmt.Printf("Error listando numeros: %v\n", err)
+			fmt.Printf("Error listando canales: %v\n", err)
 			return 1
 		}
 		fmt.Println("================================================================================")
-		fmt.Printf("%-20s | %-16s | %-20s | %-12s\n", "NUMERO TELEFONICO", "BOT ASIGNADO", "NOMBRE BOT", "ESTADO")
+		fmt.Printf("%-24s | %-12s | %-16s | %-16s | %-10s\n", "IDENTIFICADOR", "CANAL", "BOT ID", "NOMBRE BOT", "ESTADO")
 		fmt.Println("--------------------------------------------------------------------------------")
 		for _, n := range numbers {
 			state := "STANDBY"
 			if n.IsActive {
 				state = "ACTIVO"
 			}
-			fmt.Printf("%-20s | %-16s | %-20s | %-12s\n", n.PhoneNumber, n.BotID, n.BotName, state)
+			chanType := strings.ToUpper(n.ChannelType)
+			if chanType == "" {
+				chanType = "WHATSAPP"
+			}
+			fmt.Printf("%-24s | %-12s | %-16s | %-16s | %-10s\n", n.PhoneNumber, chanType, n.BotID, n.BotName, state)
 		}
 		if len(numbers) == 0 {
-			fmt.Println("No hay numeros telefonicos registrados actualmente.")
+			fmt.Println("No hay canales ni lineas registrados actualmente.")
 		}
 		fmt.Println("================================================================================")
-		fmt.Println("Uso: felix numbers assign <bot_id> <numero> | felix numbers release <bot_id> <numero>")
 
-	case "assign":
-		if len(args) < 3 {
-			fmt.Println("Uso: felix numbers assign <bot_id> <numero>")
+	case "pair", "assign":
+		var botID, phone string
+		if len(args) >= 3 {
+			botID = args[1]
+			phone = args[2]
+		} else {
+			fmt.Print("Ingrese ID del Bot: ")
+			bIn, _ := reader.ReadString('\n')
+			botID = strings.TrimSpace(bIn)
+			fmt.Print("Ingrese Numero Telefonico (E.164, ej: +5491178136622): ")
+			pIn, _ := reader.ReadString('\n')
+			phone = strings.TrimSpace(pIn)
+		}
+
+		if botID == "" || phone == "" {
+			fmt.Println("[ERROR] Se requiere bot_id y numero telefonico.")
 			return 1
 		}
-		botID := args[1]
-		phone := args[2]
-		if err := store.AssignNumber(botID, phone); err != nil {
-			fmt.Printf("Fallo de asignacion: %v\n", err)
+
+		if err := store.AssignWhatsApp(botID, phone); err != nil {
+			fmt.Printf("[ERROR] Fallo de asignacion: %v\n", err)
 			return 1
 		}
-		fmt.Printf("Numero '%s' asignado exitosamente al bot '%s'.\n", phone, botID)
+
+		pairCode := ""
+		pairFile := filepath.Join(cfg.DataDir, "pairing_code.txt")
+		if data, err := os.ReadFile(pairFile); err == nil {
+			pairCode = strings.TrimSpace(string(data))
+		}
+
+		fmt.Println("================================================================================")
+		fmt.Printf("[OK] Linea '%s' asignada exitosamente al bot '%s'.\n", phone, botID)
+		if pairCode != "" {
+			fmt.Println("--------------------------------------------------------------------------------")
+			fmt.Printf("CODIGO DE VINCULACION WHATSAPP: %s\n", pairCode)
+			fmt.Println("--------------------------------------------------------------------------------")
+			fmt.Println("Pasos para vincular:")
+			fmt.Println("  1. Abre WhatsApp en tu telefono.")
+			fmt.Println("  2. Ve a Ajustes -> Dispositivos vinculados -> Vincular un dispositivo.")
+			fmt.Println("  3. Selecciona 'Vincular con el numero de telefono'.")
+			fmt.Printf("  4. Introduce el codigo: %s\n", pairCode)
+		} else {
+			fmt.Println("Inicie o reinicie 'felix-server' para generar el codigo de vinculacion.")
+		}
+		fmt.Println("================================================================================")
+
+	case "qr":
+		qrFile := filepath.Join(cfg.DataDir, "qr_code.txt")
+		data, err := os.ReadFile(qrFile)
+		if err != nil || len(data) == 0 {
+			fmt.Println("[AVISO] No hay un codigo QR de WhatsApp activo actualmente.")
+			fmt.Println("Si la sesion ya esta vinculada, no es necesario escanear QR.")
+			fmt.Println("Si es una sesion nueva, inicie el servicio para generar un nuevo QR.")
+			return 0
+		}
+		qrStr := strings.TrimSpace(string(data))
+		fmt.Println("================================================================================")
+		fmt.Println("              ESCANEA EL CODIGO QR CON TU WHATSAPP                              ")
+		fmt.Println("================================================================================")
+		qrterminal.GenerateHalfBlock(qrStr, qrterminal.L, os.Stdout)
+		fmt.Println("================================================================================")
+
+	case "telegram":
+		var botID, token string
+		if len(args) >= 3 {
+			botID = args[1]
+			token = args[2]
+		} else {
+			fmt.Print("Ingrese ID del Bot: ")
+			bIn, _ := reader.ReadString('\n')
+			botID = strings.TrimSpace(bIn)
+			fmt.Print("Ingrese Telegram Bot Token (de @BotFather): ")
+			tIn, _ := reader.ReadString('\n')
+			token = strings.TrimSpace(tIn)
+		}
+
+		if botID == "" || token == "" {
+			fmt.Println("[ERROR] Se requiere bot_id y bot_token.")
+			return 1
+		}
+
+		fmt.Println("Validando token con la API de Telegram...")
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Get(fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token))
+		if err != nil {
+			fmt.Printf("[ERROR] No se pudo conectar con la API de Telegram: %v\n", err)
+			return 1
+		}
+		defer resp.Body.Close()
+
+		var tgRes struct {
+			OK     bool `json:"ok"`
+			Result struct {
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			} `json:"result"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&tgRes); err != nil || !tgRes.OK {
+			fmt.Println("[ERROR] Token de Telegram invalido o rechazado.")
+			return 1
+		}
+
+		botUsername := "@" + tgRes.Result.Username
+		if err := store.AssignTelegram(botID, token, botUsername); err != nil {
+			fmt.Printf("[ERROR] No se pudo guardar canal Telegram: %v\n", err)
+			return 1
+		}
+
+		fmt.Println("================================================================================")
+		fmt.Printf("[OK] Bot de Telegram vinculado exitosamente!\n")
+		fmt.Printf("Nombre: %s | Usuario: %s | Asignado al Bot: %s\n", tgRes.Result.FirstName, botUsername, botID)
+		fmt.Println("================================================================================")
 
 	case "release":
-		if len(args) < 3 {
-			fmt.Println("Uso: felix numbers release <bot_id> <numero>")
+		var botID string
+		if len(args) >= 2 {
+			botID = args[1]
+		} else {
+			fmt.Print("Ingrese ID del Bot a desvincular: ")
+			bIn, _ := reader.ReadString('\n')
+			botID = strings.TrimSpace(bIn)
+		}
+
+		if botID == "" {
+			fmt.Println("[ERROR] Se requiere bot_id.")
 			return 1
 		}
-		botID := args[1]
-		phone := args[2]
-		if err := store.ReleaseNumber(botID, phone); err != nil {
-			fmt.Printf("Error desvinculando numero: %v\n", err)
-			return 1
+
+		numbers, _ := store.ListNumbers()
+		found := false
+		for _, n := range numbers {
+			if n.BotID == botID {
+				_ = store.ReleaseNumber(botID, n.PhoneNumber)
+				found = true
+			}
 		}
-		fmt.Printf("Numero '%s' desvinculado correctamente del bot '%s'.\n", phone, botID)
+		if found {
+			fmt.Printf("[OK] Canales y lineas desvinculados correctamente del bot '%s'.\n", botID)
+		} else {
+			fmt.Printf("[AVISO] El bot '%s' no tenia canales activos.\n", botID)
+		}
 
 	default:
-		fmt.Println("Subcomandos disponibles para 'felix numbers': list, assign, release")
+		fmt.Println("Subcomandos disponibles para 'felix numbers': list, pair, qr, telegram, release")
 		return 1
 	}
 

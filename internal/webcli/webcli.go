@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,9 +22,11 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+	"rsc.io/qr"
 
 	"felix-go/internal/botfactory"
 	"felix-go/internal/config"
+	"felix-go/internal/whatsapp"
 )
 
 //go:embed assets/*
@@ -41,6 +44,13 @@ type Server struct {
 	clients    map[chan botfactory.BotLogEntry]bool
 	completer  botfactory.LLMCompleter
 	botMgr     *botfactory.Manager
+	waClient   *whatsapp.Client
+}
+
+func (s *Server) SetWhatsAppClient(w *whatsapp.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.waClient = w
 }
 
 type SimpleCompleter struct {
@@ -215,6 +225,16 @@ func (s *Server) Start() (int, error) {
 	// Endpoints REST - Actualizacion del Sistema
 	mux.HandleFunc("/api/v1/system/update/check", s.handleSystemUpdateCheck)
 	mux.HandleFunc("/api/v1/system/update/apply", s.handleSystemUpdateApply)
+
+	// Endpoints REST - Canales y Vinculacion (WhatsApp Pairing/QR, Telegram)
+	mux.HandleFunc("/api/v1/channels/status", s.handleChannelsStatus)
+	mux.HandleFunc("/api/v1/channels/whatsapp/qr", s.handleWhatsAppQR)
+	mux.HandleFunc("/api/v1/channels/whatsapp/pair-phone", s.handleWhatsAppPairPhone)
+	mux.HandleFunc("/api/v1/channels/telegram/verify", s.handleTelegramVerify)
+
+	// Endpoints REST - Proveedores y Antigravity Tools
+	mux.HandleFunc("/api/v1/system/providers/status", s.handleProvidersStatus)
+	mux.HandleFunc("/api/v1/system/antigravity/start", s.handleAntigravityStart)
 
 	// Asignacion de puerto con fallback automatico si 8056 esta ocupado
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", s.port))
@@ -1590,5 +1610,341 @@ func (s *Server) handleSystemUpdateApply(w http.ResponseWriter, r *http.Request)
 		"ok":             true,
 		"updated_commit": strings.TrimSpace(string(revOut)),
 		"message":        "Felix actualizado exitosamente",
+	})
+}
+
+func (s *Server) handleChannelsStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	waPaired := false
+	waJID := ""
+	waPairingCode := ""
+	waHasQR := false
+
+	if s.waClient != nil {
+		waPaired = s.waClient.IsPaired()
+		waPairingCode = s.waClient.GetPairingCode()
+		waHasQR = (s.waClient.GetLatestQR() != "")
+	} else {
+		if data, err := os.ReadFile(filepath.Join(s.dataDir, "pairing_code.txt")); err == nil {
+			waPairingCode = strings.TrimSpace(string(data))
+		}
+		if _, err := os.Stat(filepath.Join(s.dataDir, "qr_code.txt")); err == nil {
+			waHasQR = true
+		}
+	}
+
+	tgConfigured := false
+	if s.cfg != nil && s.cfg.TelegramBotToken != "" {
+		tgConfigured = true
+	}
+
+	type BotChan struct {
+		BotID       string `json:"bot_id"`
+		BotName     string `json:"bot_name"`
+		ChannelType string `json:"channel_type"`
+		Identifier  string `json:"identifier"`
+		IsActive    bool   `json:"is_active"`
+		PairingCode string `json:"pairing_code,omitempty"`
+	}
+
+	botChannels := []BotChan{}
+	if s.storage != nil {
+		numbers, _ := s.storage.ListNumbers()
+		for _, n := range numbers {
+			botChannels = append(botChannels, BotChan{
+				BotID:       n.BotID,
+				BotName:     n.BotName,
+				ChannelType: n.ChannelType,
+				Identifier:  n.PhoneNumber,
+				IsActive:    n.IsActive,
+				PairingCode: n.PairingCode,
+			})
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"whatsapp": map[string]any{
+			"is_paired":    waPaired,
+			"jid":          waJID,
+			"pairing_code": waPairingCode,
+			"has_qr":       waHasQR,
+		},
+		"telegram": map[string]any{
+			"configured": tgConfigured,
+		},
+		"bots": botChannels,
+	})
+}
+
+func (s *Server) handleWhatsAppQR(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.waClient != nil && s.waClient.IsPaired() {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":        true,
+			"is_paired": true,
+			"message":   "WhatsApp ya se encuentra vinculado",
+		})
+		return
+	}
+
+	qrText := ""
+	if s.waClient != nil {
+		qrText = s.waClient.GetLatestQR()
+	}
+	if qrText == "" {
+		if data, err := os.ReadFile(filepath.Join(s.dataDir, "qr_code.txt")); err == nil {
+			qrText = strings.TrimSpace(string(data))
+		}
+	}
+
+	if qrText == "" {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":        false,
+			"is_paired": false,
+			"error":     "Codigo QR no disponible en este momento. Reinicie el proceso o verifique que el servicio este activo.",
+		})
+		return
+	}
+
+	code, err := qr.Encode(qrText, qr.M)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      false,
+			"error":   fmt.Sprintf("error generando imagen QR: %v", err),
+			"qr_code": qrText,
+		})
+		return
+	}
+
+	pngBytes := code.PNG()
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":        true,
+		"is_paired": false,
+		"qr_code":   qrText,
+		"qr_image":  dataURL,
+	})
+}
+
+func (s *Server) handleWhatsAppPairPhone(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		BotID       string `json:"bot_id"`
+		PhoneNumber string `json:"phone_number"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"cuerpo json invalido"}`, http.StatusBadRequest)
+		return
+	}
+
+	phone := strings.TrimSpace(req.PhoneNumber)
+	if phone == "" {
+		http.Error(w, `{"error":"el numero telefonico es obligatorio"}`, http.StatusBadRequest)
+		return
+	}
+
+	if s.storage != nil && req.BotID != "" {
+		if err := s.storage.AssignWhatsApp(req.BotID, phone); err != nil {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
+	var pairCode string
+	var pairErr error
+	if s.waClient != nil {
+		pairCode, pairErr = s.waClient.PairPhoneOnDemand(r.Context(), phone)
+	} else {
+		pairFilePath := filepath.Join(s.dataDir, "pairing_code.txt")
+		if data, err := os.ReadFile(pairFilePath); err == nil && len(data) > 0 {
+			pairCode = strings.TrimSpace(string(data))
+		}
+	}
+
+	if pairErr != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":           false,
+			"bot_id":       req.BotID,
+			"phone_number": phone,
+			"error":        fmt.Sprintf("numero asignado pero fallo la vinculacion con WhatsApp: %v", pairErr),
+		})
+		return
+	}
+
+	if pairCode != "" && s.storage != nil && req.BotID != "" {
+		_ = s.storage.SetBotPairingCode(req.BotID, pairCode)
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":           true,
+		"bot_id":       req.BotID,
+		"phone_number": phone,
+		"pairing_code": pairCode,
+		"instructions": "Abre WhatsApp en tu telefono -> Dispositivos vinculados -> Vincular con el numero de telefono -> Ingresa este codigo.",
+	})
+}
+
+func (s *Server) handleTelegramVerify(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		BotID    string `json:"bot_id"`
+		BotToken string `json:"bot_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"cuerpo json invalido"}`, http.StatusBadRequest)
+		return
+	}
+
+	token := strings.TrimSpace(req.BotToken)
+	if token == "" {
+		http.Error(w, `{"error":"token de Telegram no proporcionado"}`, http.StatusBadRequest)
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token)
+	resp, err := client.Get(url)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": fmt.Sprintf("no se pudo conectar con la API de Telegram: %v", err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	var tgRes struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		Result      struct {
+			ID        int64  `json:"id"`
+			IsBot     bool   `json:"is_bot"`
+			FirstName string `json:"first_name"`
+			Username  string `json:"username"`
+		} `json:"result"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tgRes); err != nil || !tgRes.OK {
+		errMsg := tgRes.Description
+		if errMsg == "" {
+			errMsg = "token invalido"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": errMsg})
+		return
+	}
+
+	botUsername := "@" + tgRes.Result.Username
+	if s.storage != nil && req.BotID != "" {
+		_ = s.storage.AssignTelegram(req.BotID, token, botUsername)
+	}
+
+	if s.cfg != nil {
+		s.cfg.TelegramEnabled = true
+		s.cfg.TelegramBotToken = token
+		if s.configPath != "" {
+			_ = s.cfg.Save(s.configPath)
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":           true,
+		"bot_id":       req.BotID,
+		"bot_username": botUsername,
+		"first_name":   tgRes.Result.FirstName,
+		"message":      fmt.Sprintf("Bot de Telegram validado exitosamente como %s", botUsername),
+	})
+}
+
+func (s *Server) handleProvidersStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	probe := func(url string) bool {
+		c := &http.Client{Timeout: 900 * time.Millisecond}
+		resp, err := c.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			return resp.StatusCode < 500
+		}
+		return false
+	}
+
+	localOnline := probe("http://127.0.0.1:8045/v1/models")
+	remoteOnline := probe("http://100.96.230.125:8045/v1/models")
+
+	_, hasAgyBinary := exec.LookPath("antigravity-tools")
+
+	currentProv := "antigravity"
+	currentBase := "http://127.0.0.1:8045/v1"
+	currentModel := "gemini-3.5-flash-lite"
+	if s.cfg != nil {
+		if s.cfg.Provider != "" {
+			currentProv = s.cfg.Provider
+		}
+		if s.cfg.APIBase != "" {
+			currentBase = s.cfg.APIBase
+		}
+		if s.cfg.Model != "" {
+			currentModel = s.cfg.Model
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"local_antigravity_online":  localOnline,
+		"remote_antigravity_online": remoteOnline,
+		"antigravity_installed":     hasAgyBinary == nil,
+		"current_provider":          currentProv,
+		"current_apibase":           currentBase,
+		"current_model":             currentModel,
+		"links": map[string]string{
+			"antigravity_console": "http://127.0.0.1:8045",
+			"google_aistudio":     "https://aistudio.google.com/app/apikey",
+			"openai_keys":         "https://platform.openai.com/api-keys",
+			"anthropic_keys":      "https://console.anthropic.com/settings/keys",
+			"groq_keys":           "https://console.groq.com/keys",
+		},
+	})
+}
+
+func (s *Server) handleAntigravityStart(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	binPath, err := exec.LookPath("antigravity-tools")
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":    false,
+			"error": "antigravity-tools no esta instalado en el sistema",
+		})
+		return
+	}
+
+	cmd := exec.Command(binPath, "--headless")
+	if err := cmd.Start(); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":    false,
+			"error": fmt.Sprintf("fallo al iniciar antigravity-tools: %v", err),
+		})
+		return
+	}
+
+	time.Sleep(1200 * time.Millisecond)
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":      true,
+		"message": "Servicio antigravity-tools --headless iniciado exitosamente en segundo plano en http://127.0.0.1:8045",
 	})
 }

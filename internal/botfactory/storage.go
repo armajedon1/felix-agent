@@ -658,12 +658,7 @@ func (s *Storage) ListNumbers() ([]BotNumberInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT n.phone_number, n.bot_id, COALESCE(b.name, 'Sin asignar'), n.is_active, COALESCE(n.last_seen, CURRENT_TIMESTAMP)
-		FROM bot_numbers n
-		LEFT JOIN bots b ON n.bot_id = b.id
-		ORDER BY n.phone_number ASC;`
-
-	rows, err := s.db.Query(query)
+	rows, err := s.db.Query("SELECT id, name, status, spec_json, updated_at FROM bots ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -671,18 +666,140 @@ func (s *Storage) ListNumbers() ([]BotNumberInfo, error) {
 
 	var result []BotNumberInfo
 	for rows.Next() {
-		var info BotNumberInfo
-		var activeInt int
-		var lastSeenRaw any
-		if err := rows.Scan(&info.PhoneNumber, &info.BotID, &info.BotName, &activeInt, &lastSeenRaw); err != nil {
+		var id, name, status, raw string
+		var updatedAt time.Time
+		if err := rows.Scan(&id, &name, &status, &raw, &updatedAt); err != nil {
 			continue
 		}
-		info.IsActive = (activeInt == 1)
-		info.LastSeen = parseSQLiteTime(lastSeenRaw)
+		var spec BotSpec
+		_ = json.Unmarshal([]byte(raw), &spec)
+
+		info := BotNumberInfo{
+			BotID:            id,
+			BotName:          name,
+			IsActive:         (status == "active" || spec.IsActive),
+			LastSeen:         updatedAt,
+			ChannelType:      spec.ChannelType,
+			TelegramUsername: spec.TelegramUsername,
+			PairingCode:      spec.PairingCode,
+		}
+
+		if info.ChannelType == "" {
+			if spec.PhoneNumber != "" {
+				info.ChannelType = "whatsapp"
+			} else if spec.TelegramToken != "" {
+				info.ChannelType = "telegram"
+			} else {
+				info.ChannelType = "web"
+			}
+		}
+
+		if info.ChannelType == "telegram" {
+			if info.TelegramUsername != "" {
+				info.PhoneNumber = info.TelegramUsername
+			} else {
+				info.PhoneNumber = "Token Configurado"
+			}
+		} else if info.ChannelType == "whatsapp" {
+			info.PhoneNumber = spec.PhoneNumber
+		} else {
+			info.PhoneNumber = "Consola Web / CLI"
+		}
+
 		result = append(result, info)
 	}
 
 	return result, nil
+}
+
+func (s *Storage) AssignWhatsApp(botID, phoneNumber string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err != nil {
+		return fmt.Errorf("bot '%s' no encontrado: %w", botID, err)
+	}
+
+	var spec BotSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return err
+	}
+
+	isActive := (spec.Status == "active" || spec.IsActive)
+	if isActive && phoneNumber != "" {
+		var otherBotID string
+		err := s.db.QueryRow("SELECT bot_id FROM bot_numbers WHERE phone_number = ? AND is_active = 1 AND bot_id != ?", phoneNumber, botID).Scan(&otherBotID)
+		if err == nil && otherBotID != "" {
+			return fmt.Errorf("colision de numero: el numero '%s' ya esta asignado y activo en el bot '%s'. Debe desactivar el otro bot antes de asignarlo", phoneNumber, otherBotID)
+		}
+	}
+
+	spec.PhoneNumber = phoneNumber
+	spec.ChannelType = "whatsapp"
+	spec.UpdatedAt = time.Now().UTC()
+
+	newRaw, _ := json.Marshal(spec)
+	if _, err := s.db.Exec("UPDATE bots SET spec_json = ?, updated_at = ? WHERE id = ?", string(newRaw), spec.UpdatedAt, botID); err != nil {
+		return err
+	}
+
+	numActive := 0
+	if isActive {
+		numActive = 1
+	}
+	numQuery := `INSERT INTO bot_numbers (phone_number, bot_id, is_active, last_seen)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(phone_number, bot_id) DO UPDATE SET
+			is_active = excluded.is_active,
+			last_seen = CURRENT_TIMESTAMP;`
+	_, _ = s.db.Exec(numQuery, phoneNumber, botID, numActive)
+	return nil
+}
+
+func (s *Storage) AssignTelegram(botID, token, username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err != nil {
+		return fmt.Errorf("bot '%s' no encontrado: %w", botID, err)
+	}
+
+	var spec BotSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return err
+	}
+
+	spec.ChannelType = "telegram"
+	spec.TelegramToken = token
+	spec.TelegramUsername = username
+	spec.UpdatedAt = time.Now().UTC()
+
+	newRaw, _ := json.Marshal(spec)
+	if _, err := s.db.Exec("UPDATE bots SET spec_json = ?, updated_at = ? WHERE id = ?", string(newRaw), spec.UpdatedAt, botID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Storage) SetBotPairingCode(botID, code string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	if err := s.db.QueryRow("SELECT spec_json FROM bots WHERE id = ?", botID).Scan(&raw); err != nil {
+		return err
+	}
+	var spec BotSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return err
+	}
+	spec.PairingCode = code
+	spec.UpdatedAt = time.Now().UTC()
+	newRaw, _ := json.Marshal(spec)
+	_, err := s.db.Exec("UPDATE bots SET spec_json = ?, updated_at = ? WHERE id = ?", string(newRaw), spec.UpdatedAt, botID)
+	return err
 }
 
 func (s *Storage) SetAvatar(botID, avatarPath string) error {

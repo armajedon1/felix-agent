@@ -62,6 +62,10 @@ type BotSpec struct {
 	WebhookURL        string            `json:"webhook_url,omitempty"`
 	ReplicationSource string            `json:"replication_source,omitempty"`
 	PhoneNumber       string            `json:"phone_number,omitempty"`
+	ChannelType       string            `json:"channel_type,omitempty"`
+	TelegramToken     string            `json:"telegram_token,omitempty"`
+	TelegramUsername  string            `json:"telegram_username,omitempty"`
+	PairingCode       string            `json:"pairing_code,omitempty"`
 	AvatarPath        string            `json:"avatar_path,omitempty"`
 	IsActive          bool              `json:"is_active"`
 	Status            string            `json:"status"`
@@ -70,11 +74,14 @@ type BotSpec struct {
 }
 
 type BotNumberInfo struct {
-	PhoneNumber string    `json:"phone_number"`
-	BotID       string    `json:"bot_id"`
-	BotName     string    `json:"bot_name"`
-	IsActive    bool      `json:"is_active"`
-	LastSeen    time.Time `json:"last_seen,omitempty"`
+	PhoneNumber      string    `json:"phone_number"`
+	BotID            string    `json:"bot_id"`
+	BotName          string    `json:"bot_name"`
+	ChannelType      string    `json:"channel_type"`
+	TelegramUsername string    `json:"telegram_username,omitempty"`
+	PairingCode      string    `json:"pairing_code,omitempty"`
+	IsActive         bool      `json:"is_active"`
+	LastSeen         time.Time `json:"last_seen,omitempty"`
 }
 
 type BotLogEntry struct {

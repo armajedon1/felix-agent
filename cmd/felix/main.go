@@ -409,6 +409,9 @@ func main() {
 	var webServer *webcli.Server
 	if botStore != nil {
 		webServer = webcli.NewServer(8056, botStore, cfg, cfg.DataDir)
+		if waClient != nil {
+			webServer.SetWhatsAppClient(waClient)
+		}
 		if webPort, err := webServer.Start(); err == nil {
 			log.Printf("Consola Web CLI embebida iniciada en http://0.0.0.0:%d", webPort)
 		} else {

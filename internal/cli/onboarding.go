@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -68,13 +69,71 @@ func RunOnboardingWizard(configPath string) int {
 		selectedBase = "http://127.0.0.1:8045/v1"
 		selectedModel = "gemini-3.5-flash-lite"
 		selectedKey = "sk-antigravity"
-		fmt.Printf("Endpoint seleccionado: %s\n", selectedBase)
-		fmt.Printf("Modelo por defecto: %s\n", selectedModel)
+
+		fmt.Println("Comprobando disponibilidad de Antigravity Tools Proxy...")
+		probe := func(url string) bool {
+			c := &http.Client{Timeout: 1 * time.Second}
+			resp, err := c.Get(url)
+			if err == nil {
+				_ = resp.Body.Close()
+				return resp.StatusCode < 500
+			}
+			return false
+		}
+
+		localOnline := probe("http://127.0.0.1:8045/v1/models")
+		remoteOnline := probe("http://100.96.230.125:8045/v1/models")
+
+		if localOnline {
+			fmt.Printf("[OK] Proxy local detectado y activo en %s\n", selectedBase)
+		} else if remoteOnline {
+			fmt.Println("[INFO] Proxy del Servidor Homelab detectado en http://100.96.230.125:8045/v1")
+			fmt.Print("Desea conectarse al servidor Homelab? [S/n]: ")
+			ans, _ := reader.ReadString('\n')
+			ans = strings.ToLower(strings.TrimSpace(ans))
+			if ans == "" || ans == "s" || ans == "si" || ans == "y" {
+				selectedBase = "http://100.96.230.125:8045/v1"
+				fmt.Printf("[OK] Configurado para usar servidor Homelab: %s\n", selectedBase)
+			}
+		} else {
+			fmt.Println("[AVISO] El proxy de Antigravity Tools no responde en 127.0.0.1:8045.")
+			fmt.Println("--------------------------------------------------------------------------------")
+			fmt.Println("Link de administracion y login de cuentas: http://127.0.0.1:8045")
+			fmt.Println("Opciones disponibles:")
+			fmt.Println("  [1] Iniciar proxy local en segundo plano (antigravity-tools --headless)")
+			fmt.Println("  [2] Usar API Key gratuita de Google AI Studio (https://aistudio.google.com/app/apikey)")
+			fmt.Println("  [3] Continuar con 127.0.0.1:8045 (abrire la app por separado)")
+			fmt.Print("Seleccione una opcion [1-3] (Enter para [1]): ")
+			act, _ := reader.ReadString('\n')
+			act = strings.TrimSpace(act)
+			if act == "" || act == "1" {
+				if _, err := exec.LookPath("antigravity-tools"); err == nil {
+					fmt.Println("Iniciando antigravity-tools --headless en segundo plano...")
+					bgCmd := exec.Command("antigravity-tools", "--headless")
+					_ = bgCmd.Start()
+					time.Sleep(1500 * time.Millisecond)
+					if probe("http://127.0.0.1:8045/v1/models") {
+						fmt.Println("[OK] Proxy local iniciado y respondiendo.")
+					}
+				} else {
+					fmt.Println("[AVISO] Binario antigravity-tools no encontrado en PATH.")
+				}
+			} else if act == "2" {
+				providerName = "gemini"
+				selectedBase = "https://generativelanguage.googleapis.com/v1beta/openai/"
+				selectedModel = "gemini-2.5-flash"
+				fmt.Println("Obten tu API Key gratis en: https://aistudio.google.com/app/apikey")
+				fmt.Print("Ingrese su Google AI Studio API Key (AIzaSy...): ")
+				kIn, _ := reader.ReadString('\n')
+				selectedKey = strings.TrimSpace(kIn)
+			}
+		}
 
 	case "2":
 		providerName = "openai"
 		selectedBase = "https://api.openai.com/v1"
 		selectedModel = "gpt-4o"
+		fmt.Println("Link para obtener o gestionar claves: https://platform.openai.com/api-keys")
 		fmt.Print("Ingrese su OpenAI API Key (sk-...): ")
 		keyInput, _ := reader.ReadString('\n')
 		selectedKey = strings.TrimSpace(keyInput)
@@ -83,6 +142,7 @@ func RunOnboardingWizard(configPath string) int {
 		providerName = "gemini"
 		selectedBase = "https://generativelanguage.googleapis.com/v1beta/openai/"
 		selectedModel = "gemini-2.5-flash"
+		fmt.Println("Link para obtener clave de API gratuita: https://aistudio.google.com/app/apikey")
 		fmt.Print("Ingrese su Google AI Studio API Key (AIzaSy...): ")
 		keyInput, _ := reader.ReadString('\n')
 		selectedKey = strings.TrimSpace(keyInput)
@@ -91,6 +151,7 @@ func RunOnboardingWizard(configPath string) int {
 		providerName = "anthropic"
 		selectedBase = "https://api.anthropic.com/v1"
 		selectedModel = "claude-3-5-sonnet-20241022"
+		fmt.Println("Link para obtener clave de API: https://console.anthropic.com/settings/keys")
 		fmt.Print("Ingrese su Anthropic API Key (sk-ant-...): ")
 		keyInput, _ := reader.ReadString('\n')
 		selectedKey = strings.TrimSpace(keyInput)
@@ -99,6 +160,7 @@ func RunOnboardingWizard(configPath string) int {
 		providerName = "groq"
 		selectedBase = "https://api.groq.com/openai/v1"
 		selectedModel = "llama-3.3-70b-versatile"
+		fmt.Println("Link para obtener clave gratuita: https://console.groq.com/keys")
 		fmt.Print("Ingrese su Groq API Key (gsk_...): ")
 		keyInput, _ := reader.ReadString('\n')
 		selectedKey = strings.TrimSpace(keyInput)
@@ -156,20 +218,75 @@ func RunOnboardingWizard(configPath string) int {
 	// PASO 2: VERIFICACION DE INFERENCIA EN VIVO
 	fmt.Println("PASO 2: VERIFICACION DE INFERENCIA EN VIVO")
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Printf("Comprobando conexion con %s (%s) ...\n", providerName, selectedModel)
 
-	latency, errTest := VerifyInference(selectedBase, selectedKey, selectedModel)
-	if errTest != nil {
+	for {
+		fmt.Printf("Comprobando conexion con %s (%s) en %s ...\n", providerName, selectedModel, selectedBase)
+		latency, errTest := VerifyInference(selectedBase, selectedKey, selectedModel)
+		if errTest == nil {
+			fmt.Printf("[OK] Conexion de inferencia verificada exitosamente (Latencia: %d ms)\n", latency)
+			break
+		}
+
+		fmt.Println()
 		fmt.Printf("[AVISO] No se pudo verificar la conexion: %v\n", errTest)
-		fmt.Print("Desea guardar la configuracion de todos modos? [S/n]: ")
-		cont, _ := reader.ReadString('\n')
-		cont = strings.ToLower(strings.TrimSpace(cont))
-		if cont == "n" || cont == "no" {
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Println("Opciones de resolucion:")
+		fmt.Println("  [1] Reintentar verificacion")
+		fmt.Println("  [2] Conectar al servidor Homelab (http://100.96.230.125:8045/v1)")
+		fmt.Println("  [3] Iniciar proxy local (antigravity-tools --headless)")
+		fmt.Println("  [4] Ingresar API Key de Google AI Studio (https://aistudio.google.com/app/apikey)")
+		fmt.Println("  [5] Ingresar otra API Key (OpenAI, Groq o Custom)")
+		fmt.Println("  [6] Guardar configuracion de todos modos y continuar")
+		fmt.Println("  [0] Cancelar instalacion")
+		fmt.Print("Seleccione una opcion [1-6/0]: ")
+		recOpt, _ := reader.ReadString('\n')
+		recOpt = strings.TrimSpace(recOpt)
+
+		if recOpt == "1" {
+			continue
+		} else if recOpt == "2" {
+			providerName = "antigravity"
+			selectedBase = "http://100.96.230.125:8045/v1"
+			selectedModel = "gemini-3.5-flash-lite"
+			selectedKey = "sk-antigravity"
+			continue
+		} else if recOpt == "3" {
+			if _, err := exec.LookPath("antigravity-tools"); err == nil {
+				fmt.Println("Iniciando servicio antigravity-tools --headless en segundo plano...")
+				bgCmd := exec.Command("antigravity-tools", "--headless")
+				_ = bgCmd.Start()
+				time.Sleep(1500 * time.Millisecond)
+			} else {
+				fmt.Println("[AVISO] Binario antigravity-tools no instalado.")
+			}
+			continue
+		} else if recOpt == "4" {
+			providerName = "gemini"
+			selectedBase = "https://generativelanguage.googleapis.com/v1beta/openai/"
+			selectedModel = "gemini-2.5-flash"
+			fmt.Println("Enlace para clave gratuita: https://aistudio.google.com/app/apikey")
+			fmt.Print("Ingrese su Google AI Studio API Key (AIzaSy...): ")
+			kIn, _ := reader.ReadString('\n')
+			selectedKey = strings.TrimSpace(kIn)
+			continue
+		} else if recOpt == "5" {
+			fmt.Print("Ingrese URL Base: ")
+			uIn, _ := reader.ReadString('\n')
+			selectedBase = strings.TrimSpace(uIn)
+			fmt.Print("Ingrese API Key: ")
+			kIn, _ := reader.ReadString('\n')
+			selectedKey = strings.TrimSpace(kIn)
+			fmt.Print("Ingrese Modelo: ")
+			mIn, _ := reader.ReadString('\n')
+			selectedModel = strings.TrimSpace(mIn)
+			continue
+		} else if recOpt == "6" {
+			fmt.Println("Guardando configuracion sin confirmacion de inferencia.")
+			break
+		} else {
 			fmt.Println("Operacion cancelada. No se modifico la configuracion.")
 			return 1
 		}
-	} else {
-		fmt.Printf("[OK] Conexion de inferencia verificada exitosamente (Latencia: %d ms)\n", latency)
 	}
 
 	fmt.Println()

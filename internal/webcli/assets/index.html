@@ -810,41 +810,63 @@
       </div>
     </div>
 
-    <!-- TAB 3: LINEAS Y NUMEROS -->
+    <!-- TAB 3: CANALES Y LINEAS DE BOTS -->
     <div id="tab-numbers" class="tab-view">
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Matriz de Líneas Telefónicas y Asignaciones</div>
+          <div class="card-title">Matriz de Canales y Líneas de Comunicación de Bots</div>
           <button class="btn btn-primary" onclick="refreshNumbers()">Actualizar</button>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Número Telefónico</th>
-              <th>Bot Vinculado</th>
-              <th>Estado de la Línea</th>
-              <th>Última Conexión</th>
-              <th>Acciones</th>
+              <th>Bot</th>
+              <th>Tipo de Canal</th>
+              <th>Identificador / Línea</th>
+              <th>Estado</th>
+              <th>Acciones de Vinculación</th>
             </tr>
           </thead>
           <tbody id="numbersTableBody">
-            <tr><td colspan="5">Cargando números...</td></tr>
+            <tr><td colspan="5">Cargando canales...</td></tr>
           </tbody>
         </table>
       </div>
 
-      <div class="card">
-        <div class="card-title" style="margin-bottom: 12px;">Vincular o Asignar Línea a un Bot</div>
-        <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
-          <div style="flex: 1; min-width: 200px;">
+      <div class="grid-2">
+        <!-- VINCULAR WHATSAPP -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 12px;">Vincular WhatsApp a un Bot (Código Telefónico o Código QR)</div>
+          <div class="form-group">
             <label class="form-label">Bot de Destino:</label>
             <select id="assignBotSelect" class="input-field"></select>
           </div>
-          <div style="flex: 1; min-width: 200px;">
-            <label class="form-label">Número Telefónico (E.164):</label>
-            <input type="text" id="assignPhone" class="input-field" placeholder="ej: +5491153402646">
+          <div class="form-group">
+            <label class="form-label">Número Telefónico E.164 (para Código de Vinculación):</label>
+            <input type="text" id="assignPhone" class="input-field" placeholder="ej: +5491178136622">
           </div>
-          <button class="btn btn-primary" onclick="assignNumberSubmit()">Asignar Línea</button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+            <button class="btn btn-primary" onclick="pairWhatsAppPhone()">Generar Código de Emparejamiento</button>
+            <button class="btn btn-success" onclick="loadWhatsAppQR()">Mostrar Código QR en Pantalla</button>
+          </div>
+          <div id="waPairingResult" style="margin-top: 14px; display: none;"></div>
+        </div>
+
+        <!-- VINCULAR TELEGRAM -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 12px;">Vincular Bot de Telegram (Sin Número Telefónico)</div>
+          <div class="form-group">
+            <label class="form-label">Bot de Destino:</label>
+            <select id="tgBotSelect" class="input-field"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Telegram Bot Token (obtenido de @BotFather):</label>
+            <input type="password" id="tgBotToken" class="input-field" placeholder="ej: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+            <button class="btn btn-primary" onclick="verifyTelegramBot()">Verificar y Conectar Telegram</button>
+          </div>
+          <div id="tgVerifyResult" style="margin-top: 14px; display: none;"></div>
         </div>
       </div>
     </div>
@@ -912,6 +934,76 @@
 
     <!-- TAB 5: APIS E INFERENCIA -->
     <div id="tab-apis" class="tab-view">
+      <!-- GESTOR DE CUENTAS Y LOGIN -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Cuentas y Enlaces de Autenticación (Login OAuth / Claves API)</div>
+          <button class="btn" onclick="checkProvidersStatus()">Actualizar Estado</button>
+        </div>
+        <div class="grid-2" style="margin-top: 10px;">
+          <!-- ANTIGRAVITY TOOLS -->
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong>Antigravity Tools Proxy</strong>
+              <span id="agyStatusBadge" class="badge">CONSULTANDO...</span>
+            </div>
+            <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+              Rotación automática de cuentas de Google, OpenAI y Claude con reanudación de sesiones.
+            </p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-primary" style="font-size: 11px; padding: 4px 8px;" onclick="startAntigravityProxy()">Iniciar Proxy Local</button>
+              <a href="http://127.0.0.1:8045" target="_blank" class="btn" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">Abrir Consola de Login (:8045)</a>
+              <button class="btn" style="font-size: 11px; padding: 4px 8px;" onclick="setProviderEndpoint('http://100.96.230.125:8045/v1', 'antigravity', 'gemini-3.5-flash-lite')">Usar Servidor Homelab</button>
+            </div>
+          </div>
+
+          <!-- GOOGLE GEMINI -->
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong>Google Gemini (Google AI Studio)</strong>
+              <span class="badge badge-success">OFICIAL</span>
+            </div>
+            <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+              Obtén tu API Key gratuita o inicia sesión con tu cuenta de Google.
+            </p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-primary" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">Obtener Clave / Login Google</a>
+              <button class="btn" style="font-size: 11px; padding: 4px 8px;" onclick="setProviderEndpoint('https://generativelanguage.googleapis.com/v1beta/openai/', 'gemini', 'gemini-2.5-flash')">Cargar Preset Gemini</button>
+            </div>
+          </div>
+
+          <!-- GROQ CLOUD -->
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong>Groq Cloud (LPU de Ultra Baja Latencia)</strong>
+              <span class="badge badge-info">RAPIDO</span>
+            </div>
+            <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+              Inferencia veloz en modelos Llama y Qwen. Clave gratuita en 1 clic.
+            </p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="https://console.groq.com/keys" target="_blank" class="btn" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">Obtener Clave Groq</a>
+              <button class="btn" style="font-size: 11px; padding: 4px 8px;" onclick="setProviderEndpoint('https://api.groq.com/openai/v1', 'groq', 'llama-3.3-70b-versatile')">Cargar Preset Groq</button>
+            </div>
+          </div>
+
+          <!-- OPENAI / ANTHROPIC -->
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 8px; padding: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong>OpenAI / Anthropic Claude</strong>
+              <span class="badge">NATIVO</span>
+            </div>
+            <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+              Conexión directa con GPT-4o, o3-mini o Claude 3.5 Sonnet.
+            </p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="https://platform.openai.com/api-keys" target="_blank" class="btn" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">Login OpenAI</a>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" class="btn" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">Login Anthropic</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <div class="card-title">Configuración de Motores de Inferencia y LLMs</div>
@@ -1470,6 +1562,10 @@
       if (select) {
         select.innerHTML = cachedBots.map(b => `<option value="${b.id}">${b.name} (${b.id})</option>`).join('');
       }
+      const tgSelect = document.getElementById('tgBotSelect');
+      if (tgSelect) {
+        tgSelect.innerHTML = cachedBots.map(b => `<option value="${b.id}">${b.name} (${b.id})</option>`).join('');
+      }
       const logFilter = document.getElementById('logBotFilter');
       if (logFilter) {
         logFilter.innerHTML = '<option value="">Todos los Bots</option>' + cachedBots.map(b => `<option value="${b.id}">${b.name} (${b.id})</option>`).join('');
@@ -1730,62 +1826,225 @@
     }
   }
 
-  /* GESTOR DE NUMEROS */
+  /* GESTOR DE CANALES Y NUMEROS DE BOTS */
   async function refreshNumbers() {
     const tbody = document.getElementById('numbersTableBody');
     try {
       const res = await fetch((activeApiBase || '') + '/api/v1/numbers');
       const data = await res.json();
       if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5">No hay líneas telefónicas registradas.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5">No hay canales ni líneas registrados.</td></tr>';
         return;
       }
       tbody.innerHTML = data.map(n => {
         const stateBadge = n.is_active ? '<span class="badge badge-success">ACTIVO</span>' : '<span class="badge badge-warning">STANDBY</span>';
-        const lastSeenStr = n.last_seen ? new Date(n.last_seen).toLocaleString() : 'Recién vinculado';
+        let chanBadge = '<span class="badge badge-info">WHATSAPP</span>';
+        if (n.channel_type === 'telegram') {
+          chanBadge = '<span class="badge" style="background:#0284c7; color:white;">TELEGRAM</span>';
+        } else if (n.channel_type === 'web') {
+          chanBadge = '<span class="badge" style="background:#475569; color:white;">WEB / CLI</span>';
+        }
+
+        const identifier = n.phone_number || (n.telegram_username ? n.telegram_username : 'Consola Local');
         return `<tr>
-          <td><strong>${n.phone_number}</strong></td>
-          <td>${n.bot_name || n.bot_id}</td>
+          <td><strong>${n.bot_name || n.bot_id}</strong></td>
+          <td>${chanBadge}</td>
+          <td><code>${identifier}</code></td>
           <td>${stateBadge}</td>
-          <td>${lastSeenStr}</td>
           <td>
-            <button class="btn btn-danger" onclick="releaseNumber('${n.bot_id}', '${n.phone_number}')">Desvincular</button>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="selectBotForWhatsApp('${n.bot_id}', '${n.phone_number || ''}')">Vincular WhatsApp</button>
+              <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="selectBotForTelegram('${n.bot_id}')">Vincular Telegram</button>
+              <button class="btn btn-danger" style="padding: 2px 8px; font-size: 11px;" onclick="releaseNumber('${n.bot_id}', '${n.phone_number || ''}')">Desvincular</button>
+            </div>
           </td>
         </tr>`;
       }).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando números: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando canales: ${err.message}</td></tr>`;
     }
   }
 
-  async function assignNumberSubmit() {
+  function selectBotForWhatsApp(botId, phone) {
+    const sel = document.getElementById('assignBotSelect');
+    if (sel && botId) sel.value = botId;
+    if (phone && phone !== 'Consola Web / CLI' && !phone.startsWith('@')) {
+      document.getElementById('assignPhone').value = phone;
+    }
+    document.getElementById('assignPhone').focus();
+  }
+
+  function selectBotForTelegram(botId) {
+    const sel = document.getElementById('tgBotSelect');
+    if (sel && botId) sel.value = botId;
+    document.getElementById('tgBotToken').focus();
+  }
+
+  async function pairWhatsAppPhone() {
     const botId = document.getElementById('assignBotSelect').value;
     const phone = document.getElementById('assignPhone').value.trim();
     if (!phone) {
-      alert('Debe especificar el número telefónico');
+      alert('Debe ingresar un número telefónico (ej: +5491178136622)');
       return;
     }
+    const resBox = document.getElementById('waPairingResult');
+    resBox.style.display = 'block';
+    resBox.innerHTML = '<div style="color: #94a3b8;">Solicitando código de emparejamiento a WhatsApp...</div>';
+
     try {
-      const res = await fetch((activeApiBase || '') + '/api/v1/numbers/assign', {
+      const res = await fetch((activeApiBase || '') + '/api/v1/channels/whatsapp/pair-phone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bot_id: botId, phone_number: phone })
       });
-      const result = await res.json();
-      if (!res.ok || result.error) {
-        alert('Error de asignación: ' + (result.error || 'Fallo'));
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        resBox.innerHTML = `<div style="color: #ef4444; padding: 10px; background: rgba(239, 68, 68, 0.1); border-radius: 6px;">Error: ${data.error || 'No se pudo generar código'}</div>`;
         return;
       }
-      document.getElementById('assignPhone').value = '';
+
+      if (data.pairing_code) {
+        resBox.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; border-radius: 8px; padding: 16px; text-align: center; margin-top: 10px;">
+            <div style="font-size: 12px; font-weight: 700; color: #6ee7b7; letter-spacing: 1px;">CÓDIGO DE VINCULACIÓN TELEFÓNICO:</div>
+            <div style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #10b981; margin: 12px 0;">${data.pairing_code}</div>
+            <div style="font-size: 12px; color: #cbd5e1; max-width: 500px; margin: 0 auto; text-align: left; line-height: 1.5;">
+              <strong>Instrucciones para WhatsApp:</strong><br>
+              1. Abre WhatsApp en tu teléfono con la línea <code>${data.phone_number}</code>.<br>
+              2. Ve a <strong>Ajustes -> Dispositivos vinculados -> Vincular un dispositivo</strong>.<br>
+              3. Toca en <strong>Vincular con el número de teléfono</strong>.<br>
+              4. Introduce el código de 8 caracteres mostrado arriba.
+            </div>
+          </div>
+        `;
+      } else {
+        resBox.innerHTML = `<div style="color: #10b981; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 6px;">Línea asignada exitosamente. Reinicie felix-server si requiere generar el código de sesión nueva.</div>`;
+      }
       refreshNumbers();
       refreshBots();
     } catch (err) {
-      alert('Error: ' + err.message);
+      resBox.innerHTML = `<div style="color: #ef4444;">Fallo de conexión: ${err.message}</div>`;
     }
   }
 
+  async function loadWhatsAppQR() {
+    const resBox = document.getElementById('waPairingResult');
+    resBox.style.display = 'block';
+    resBox.innerHTML = '<div style="color: #94a3b8;">Consultando código QR activo...</div>';
+
+    try {
+      const res = await fetch((activeApiBase || '') + '/api/v1/channels/whatsapp/qr');
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        resBox.innerHTML = `<div style="color: #f59e0b; padding: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 6px;">
+          ${data.error || 'Código QR no disponible actualmente.'}
+        </div>`;
+        return;
+      }
+      if (data.is_paired) {
+        resBox.innerHTML = `<div style="color: #10b981; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 6px;">
+          Dispositivo WhatsApp ya vinculado exitosamente (${data.jid || 'Conectado'}).
+        </div>`;
+        return;
+      }
+      if (data.qr_image) {
+        resBox.innerHTML = `
+          <div style="background: rgba(30, 41, 59, 0.8); border: 1px solid #334155; border-radius: 8px; padding: 16px; text-align: center; margin-top: 10px;">
+            <div style="font-size: 13px; font-weight: 700; color: #f8fafc; margin-bottom: 12px;">ESCANEA EL CÓDIGO QR CON WHATSAPP:</div>
+            <img src="${data.qr_image}" style="width: 240px; height: 240px; background: white; padding: 8px; border-radius: 6px; display: inline-block;">
+            <div style="font-size: 12px; color: #94a3b8; margin-top: 12px;">
+              Abre WhatsApp -> Dispositivos vinculados -> Vincular un dispositivo y escanea la imagen con tu cámara.
+            </div>
+            <div style="margin-top: 12px;">
+              <button class="btn" onclick="loadWhatsAppQR()">Recargar Código QR</button>
+            </div>
+          </div>
+        `;
+      }
+    } catch (err) {
+      resBox.innerHTML = `<div style="color: #ef4444;">Error obteniendo QR: ${err.message}</div>`;
+    }
+  }
+
+  async function verifyTelegramBot() {
+    const botId = document.getElementById('tgBotSelect').value;
+    const token = document.getElementById('tgBotToken').value.trim();
+    if (!token) {
+      alert('Debe ingresar el Telegram Bot Token provisto por @BotFather');
+      return;
+    }
+    const resBox = document.getElementById('tgVerifyResult');
+    resBox.style.display = 'block';
+    resBox.innerHTML = '<div style="color: #94a3b8;">Validando token con Telegram API...</div>';
+
+    try {
+      const res = await fetch((activeApiBase || '') + '/api/v1/channels/telegram/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_id: botId, bot_token: token })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        resBox.innerHTML = `<div style="color: #ef4444; padding: 10px; background: rgba(239, 68, 68, 0.1); border-radius: 6px;">Fallo de validación: ${data.error || 'Token inválido'}</div>`;
+        return;
+      }
+      resBox.innerHTML = `<div style="color: #10b981; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 6px;">
+        Bot validado y conectado exitosamente como <strong>${data.bot_username}</strong> (${data.first_name || 'Bot'}).
+      </div>`;
+      document.getElementById('tgBotToken').value = '';
+      refreshNumbers();
+      refreshBots();
+    } catch (err) {
+      resBox.innerHTML = `<div style="color: #ef4444;">Error: ${err.message}</div>`;
+    }
+  }
+
+  async function setProviderEndpoint(base, prov, model) {
+    document.getElementById('apiBase').value = base;
+    document.getElementById('apiProvider').value = prov;
+    document.getElementById('apiModel').value = model;
+    alert(`Preset cargado:\nProveedor: ${prov}\nEndpoint: ${base}\nModelo: ${model}\n\nHaga clic en 'Guardar Configuración en Servidor' para aplicar.`);
+  }
+
+  async function startAntigravityProxy() {
+    try {
+      const res = await fetch((activeApiBase || '') + '/api/v1/system/antigravity/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) {
+        alert('Error: ' + data.error);
+      } else {
+        alert(data.message || 'Servicio iniciado');
+        checkProvidersStatus();
+      }
+    } catch (err) {
+      alert('Error iniciando proxy: ' + err.message);
+    }
+  }
+
+  async function checkProvidersStatus() {
+    try {
+      const res = await fetch((activeApiBase || '') + '/api/v1/system/providers/status');
+      const data = await res.json();
+      if (!data) return;
+
+      const agyBadge = document.getElementById('agyStatusBadge');
+      if (agyBadge) {
+        if (data.local_antigravity_online) {
+          agyBadge.className = 'badge badge-success';
+          agyBadge.innerText = 'LOCAL ACTIVO (:8045)';
+        } else if (data.remote_antigravity_online) {
+          agyBadge.className = 'badge badge-info';
+          agyBadge.innerText = 'HOMELAB ACTIVO (100.96.230.125)';
+        } else {
+          agyBadge.className = 'badge badge-danger';
+          agyBadge.innerText = 'OFFLINE (:8045)';
+        }
+      }
+    } catch (_) {}
+  }
+
   async function releaseNumber(botId, phone) {
-    if (!confirm(`Confirma la desvinculación de la línea ${phone}?`)) return;
+    if (!confirm(`Confirma la desvinculación del canal asignado al bot ${botId}?`)) return;
     try {
       const res = await fetch((activeApiBase || '') + '/api/v1/numbers/release', {
         method: 'POST',
@@ -2093,6 +2352,7 @@
     }
     showTab('chat');
     checkEnvironmentHealth();
+    checkProvidersStatus();
   });
 </script>
 </body>

@@ -48,6 +48,9 @@ type Client struct {
 	scratchpad    *tools.ScratchpadManager
 	debouncers    sync.Map
 	voiceModeMap  sync.Map
+	qrMu          sync.RWMutex
+	latestQR      string
+	pairingCode   string
 }
 
 func (c *Client) SetSubagentManager(sm *agent.SubagentManager) {
@@ -173,6 +176,9 @@ func (c *Client) Start(ctx context.Context) error {
 			cleanNum := cleanPhone(c.cfg.PhoneNumber)
 			code, err := c.client.PairPhone(ctx, cleanNum, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 			if err == nil {
+				c.qrMu.Lock()
+				c.pairingCode = code
+				c.qrMu.Unlock()
 				pairFilePath := filepath.Join(c.cfg.DataDir, "pairing_code.txt")
 				_ = os.WriteFile(pairFilePath, []byte(code), 0644)
 				fmt.Println("==================================================")
@@ -190,9 +196,19 @@ func (c *Client) Start(ctx context.Context) error {
 
 		for evt := range qrChan {
 			if evt.Event == "code" {
+				c.qrMu.Lock()
+				c.latestQR = evt.Code
+				c.qrMu.Unlock()
+				_ = os.WriteFile(filepath.Join(c.cfg.DataDir, "qr_code.txt"), []byte(evt.Code), 0644)
 				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
 				fmt.Println("\nEsperando escaneo de codigo QR...")
 			} else if evt.Event == "success" {
+				c.qrMu.Lock()
+				c.latestQR = ""
+				c.pairingCode = ""
+				c.qrMu.Unlock()
+				_ = os.Remove(filepath.Join(c.cfg.DataDir, "qr_code.txt"))
+				_ = os.Remove(filepath.Join(c.cfg.DataDir, "pairing_code.txt"))
 				fmt.Println("\n==============================================================")
 				fmt.Println(" Dispositivo WhatsApp vinculado con exito!")
 				fmt.Println("==============================================================")
@@ -211,6 +227,51 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (c *Client) GetLatestQR() string {
+	c.qrMu.RLock()
+	defer c.qrMu.RUnlock()
+	if c.latestQR != "" {
+		return c.latestQR
+	}
+	if data, err := os.ReadFile(filepath.Join(c.cfg.DataDir, "qr_code.txt")); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	return ""
+}
+
+func (c *Client) GetPairingCode() string {
+	c.qrMu.RLock()
+	defer c.qrMu.RUnlock()
+	if c.pairingCode != "" {
+		return c.pairingCode
+	}
+	if data, err := os.ReadFile(filepath.Join(c.cfg.DataDir, "pairing_code.txt")); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	return ""
+}
+
+func (c *Client) IsPaired() bool {
+	return c.client != nil && c.client.Store != nil && c.client.Store.ID != nil
+}
+
+func (c *Client) PairPhoneOnDemand(ctx context.Context, phone string) (string, error) {
+	if c.client == nil {
+		return "", fmt.Errorf("cliente whatsmeow no inicializado")
+	}
+	cleanNum := cleanPhone(phone)
+	code, err := c.client.PairPhone(ctx, cleanNum, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	if err != nil {
+		return "", err
+	}
+	c.qrMu.Lock()
+	c.pairingCode = code
+	c.qrMu.Unlock()
+	pairFilePath := filepath.Join(c.cfg.DataDir, "pairing_code.txt")
+	_ = os.WriteFile(pairFilePath, []byte(code), 0644)
+	return code, nil
 }
 
 // GetOwnerJID retorna el JID del propietario principal o del primer administrador.
