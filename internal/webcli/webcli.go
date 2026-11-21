@@ -375,8 +375,8 @@ func (s *Server) handleBots(w http.ResponseWriter, r *http.Request) {
 			spec = botfactory.TemplateCallScheduler()
 		case "faq_support", "soporte":
 			spec = botfactory.TemplateFAQSupport()
-		case "mosiah":
-			spec = botfactory.TemplateMosiah()
+		case "comunidad", "asistente":
+			spec = botfactory.TemplateComunidad()
 		default:
 			spec = &botfactory.BotSpec{
 				ID:              req.ID,

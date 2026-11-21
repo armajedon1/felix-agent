@@ -1084,7 +1084,7 @@ func CmdBots(args []string, configPath string) int {
 			}
 		}
 		if id == "" {
-			fmt.Println("Uso: felix bots create --template <pizzeria|turnos|llamadas|faq_soporte|mosiah> --id <slug> --name <nombre>")
+			fmt.Println("Uso: felix bots create --template <pizzeria|turnos|llamadas|faq_soporte|comunidad> --id <slug> --name <nombre>")
 			return 1
 		}
 		spec, err := mgr.CreateFromTemplate(tmpl, id, name, nil)
@@ -1911,7 +1911,7 @@ func CmdChat(args []string, configPath string) int {
 	fmt.Println("Interactua con Felix Core o con cualquiera de tus bots especializados.")
 	fmt.Println("Comandos especiales:")
 	fmt.Println("  :bots        Lista todos los bots y lineas registradas")
-	fmt.Println("  :bot <id>    Cambia de asistente (ej. ':bot mosiah-varela' o ':bot felix')")
+	fmt.Println("  :bot <id>    Cambia de asistente (ej. ':bot pizzeria-napoli' o ':bot felix')")
 	fmt.Println("  :tools       Lista herramientas disponibles en Felix Core")
 	fmt.Println("  :model       Muestra la configuracion del proveedor LLM")
 	fmt.Println("  :clear       Limpia la pantalla de la terminal")
@@ -1948,7 +1948,7 @@ func CmdChat(args []string, configPath string) int {
 		if line == ":help" {
 			fmt.Println("Comandos de la consola CLI:")
 			fmt.Println("  :bots        Lista asistentes y lineas telefonicas")
-			fmt.Println("  :bot <id>    Cambia el asistente activo (ej: :bot mosiah-varela)")
+			fmt.Println("  :bot <id>    Cambia el asistente activo (ej: :bot pizzeria-napoli)")
 			fmt.Println("  :tools       Lista el catalogo de herramientas disponibles")
 			fmt.Println("  :model       Muestra la configuracion del proveedor LLM")
 			fmt.Println("  :clear       Limpia la pantalla")

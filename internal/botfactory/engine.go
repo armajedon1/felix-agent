@@ -61,10 +61,10 @@ func (m *Manager) CreateFromTemplate(templateName, customID, customName string, 
 		spec = TemplateCallScheduler()
 	case "faq", "faq_soporte", "soporte", "atencion":
 		spec = TemplateFAQSupport()
-	case "mosiah", "comunidad", "asistente":
-		spec = TemplateMosiah()
+	case "comunidad", "asistente":
+		spec = TemplateComunidad()
 	default:
-		return nil, fmt.Errorf("plantilla '%s' no reconocida. Opciones disponibles: pizzeria, turnos, llamadas, faq_soporte, mosiah", templateName)
+		return nil, fmt.Errorf("plantilla '%s' no reconocida. Opciones disponibles: pizzeria, turnos, llamadas, faq_soporte, comunidad", templateName)
 	}
 
 	if customID != "" {

@@ -32,12 +32,12 @@ func (t *BotFactoryTool) Parameters() map[string]any {
 			},
 			"template": map[string]any{
 				"type":        "string",
-				"enum":        []string{"pizzeria", "turnos", "llamadas", "faq_soporte", "mosiah"},
+				"enum":        []string{"pizzeria", "turnos", "llamadas", "faq_soporte", "comunidad"},
 				"description": "Plantilla base para create_from_template.",
 			},
 			"bot_id": map[string]any{
 				"type":        "string",
-				"description": "Identificador unico en formato slug (ej. 'pizzeria-napoli', 'mosiah-varela').",
+				"description": "Identificador unico en formato slug (ej. 'pizzeria-napoli', 'asistente-comunidad').",
 			},
 			"target_id": map[string]any{
 				"type":        "string",
@@ -154,7 +154,7 @@ func (t *BotFactoryTool) Execute(ctx context.Context, args json.RawMessage) (str
 
 	case "create_from_template":
 		if in.Template == "" {
-			return "", fmt.Errorf("debes especificar 'template' (pizzeria, turnos, llamadas, faq_soporte, mosiah)")
+			return "", fmt.Errorf("debes especificar 'template' (pizzeria, turnos, llamadas, faq_soporte, comunidad)")
 		}
 		spec, err := t.Manager.CreateFromTemplate(in.Template, in.BotID, in.Name, nil)
 		if err != nil {

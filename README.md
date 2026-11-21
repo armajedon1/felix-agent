@@ -98,15 +98,15 @@ Proveedores soportados con configuración en un clic:
 * **Chat Interactivo en Terminal (CLI):**
   ```bash
   felix chat                    # Chat interactivo con Felix Core o selector de bots
-  felix chat mosiah-varela      # Chat interactivo directo con el bot MosIAh
-  felix chat mosiah-varela "Hola quiero agendar un turno"  # Peticion rapida directa
+  felix chat pizzeria-napoli    # Chat interactivo directo con el bot
+  felix chat pizzeria-napoli "Hola quiero una pizza grande"  # Peticion rapida directa
   ```
   Dentro de la sesión puedes usar `:bots` para listar asistentes y `:bot <id>` para alternar en caliente entre Felix y cualquier bot comercial. Puedes pedirle a Felix en lenguaje natural que configure o modifique el comportamiento de tus bots y los cambios se guardan de inmediato.
 * **Ventana de Aplicación de Escritorio (Desktop Window & Chat):**
   ```bash
   felix desktop
   ```
-  Abre una ventana de aplicación de escritorio independiente (GTK nativa o Chromium App aislada, sin barra de direcciones web ni pestañas de navegador) con módulo integrado de **Chat en vivo** para interactuar con Félix Core y con cualquier bot registrado (ej. MosIAh), además de los paneles de gestión ABM de bots, líneas telefónicas, bases SQLite y streaming de logs.
+  Abre una ventana de aplicación de escritorio independiente (GTK nativa o Chromium App aislada, sin barra de direcciones web ni pestañas de navegador) con módulo integrado de **Chat en vivo** para interactuar con Félix Core y con cualquier bot registrado (ej. Pizzería Napoli), además de los paneles de gestión ABM de bots, líneas telefónicas, bases SQLite y streaming de logs.
 * **Consola Web Embebida (para servidores remotos):**
   ```bash
   felix web
@@ -230,7 +230,7 @@ felix config set model gemini-2.5-flash
 felix bots list
 felix bots show pizzeria-napoli
 felix bots create --template pizzeria --id pizzeria-roma --name "Pizzeria Roma"
-felix bots replicate mosiah-community mosiah-varela --name "MosIAh Varela"
+felix bots replicate pizzeria-napoli pizzeria-clon --name "Pizzeria Clon"
 felix bots chat pizzeria-napoli
 felix bots orders pizzeria-napoli
 felix bots appointments peluqueria-estilo

@@ -200,12 +200,12 @@ func TestTemplateCreation(t *testing.T) {
 		t.Errorf("tipo de bot incorrecto para faq")
 	}
 
-	specMosiah, err := mgr.CreateFromTemplate("mosiah", "mosiah-replica", "Mosiah Barrio Varela", nil)
+	specComunidad, err := mgr.CreateFromTemplate("comunidad", "comunidad-replica", "Comunidad Barrio Norte", nil)
 	if err != nil {
-		t.Fatalf("error creando plantilla mosiah: %v", err)
+		t.Fatalf("error creando plantilla comunidad: %v", err)
 	}
-	if specMosiah.Name != "Mosiah Barrio Varela" || len(specMosiah.Nicknames) == 0 {
-		t.Errorf("error en plantilla mosiah")
+	if specComunidad.Name != "Comunidad Barrio Norte" || len(specComunidad.Nicknames) == 0 {
+		t.Errorf("error en plantilla comunidad")
 	}
 }
 
