@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -34,120 +33,95 @@ import (
 	"felix-go/internal/whatsapp"
 )
 
-func runSetupWizard(configPath string) {
-	fmt.Println()
-	fmt.Println("==============================================================")
-	fmt.Println("         FELIX - ASISTENTE AUTONOMO OPEN SOURCE               ")
-	fmt.Println("            Asistente de Configuracion Inicial                ")
-	fmt.Println("==============================================================")
-	fmt.Println()
-
-	reader := bufio.NewReader(os.Stdin)
-
-	cfg, _ := config.LoadConfig(configPath)
-	if cfg == nil {
-		cfg = config.DefaultConfig()
-	}
-
-	fmt.Println("Seleccione su proveedor de inferencia:")
-	fmt.Println("  1) Google Gemini (Recomendado - gemini-2.5-flash)")
-	fmt.Println("  2) OpenAI (gpt-4o)")
-	fmt.Println("  3) Groq Cloud (llama-3.3-70b-versatile + Whisper)")
-	fmt.Println("  4) Ollama Local (http://localhost:11434/v1)")
-	fmt.Println("  5) Antigravity Tools / Proxy Local (http://127.0.0.1:8045/v1)")
-	fmt.Println("  6) Endpoint Personalizado / Custom")
-	fmt.Print("Opcion [1-6, por defecto 1]: ")
-
-	opcion, _ := reader.ReadString('\n')
-	opcion = strings.TrimSpace(opcion)
-	if opcion == "" {
-		opcion = "1"
-	}
-
-	switch opcion {
-	case "1":
-		fmt.Print("\nIngrese su API Key de Google Gemini (de https://aistudio.google.com/): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		_ = cfg.ApplyPreset("gemini", inputKey, "", "")
-	case "2":
-		fmt.Print("\nIngrese su API Key de OpenAI (sk-...): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		_ = cfg.ApplyPreset("openai", inputKey, "", "")
-	case "3":
-		fmt.Print("\nIngrese su API Key de Groq (gsk_...): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		_ = cfg.ApplyPreset("groq", inputKey, "", "")
-	case "4":
-		_ = cfg.ApplyPreset("ollama", "", "", "")
-		fmt.Println("\nConfigurado para Ollama en http://localhost:11434/v1 con modelo llama3.")
-	case "5":
-		_ = cfg.ApplyPreset("antigravity", "", "", "")
-		fmt.Println("\nConfigurado para Antigravity Tools en http://127.0.0.1:8045/v1.")
-	default:
-		fmt.Printf("\n1. Ingrese la direccion del endpoint de inferencia (API Base)\n   [Por defecto: %s]: ", cfg.APIBase)
-		inputBase, _ := reader.ReadString('\n')
-		inputBase = strings.TrimSpace(inputBase)
-		if inputBase != "" {
-			cfg.APIBase = inputBase
-		}
-
-		fmt.Printf("\n2. Ingrese la clave de API (API Key) para inferencia:\n   (Para servidores locales sin autenticacion puede dejarlo vacio): ")
-		inputKey, _ := reader.ReadString('\n')
-		inputKey = strings.TrimSpace(inputKey)
-		if inputKey != "" {
-			cfg.APIKey = inputKey
-		}
-
-		fmt.Printf("\n3. Ingrese el modelo LLM a utilizar\n   [Por defecto: %s]: ", cfg.Model)
-		inputModel, _ := reader.ReadString('\n')
-		inputModel = strings.TrimSpace(inputModel)
-		if inputModel != "" {
-			cfg.Model = inputModel
-		}
-	}
-
-	if cfg.GroqAPIKey == "" && opcion != "3" {
-		fmt.Printf("\nIngrese la clave de Groq para transcripcion Whisper de notas de voz en WhatsApp\n   (Opcional, presione Enter para omitir): ")
-		inputGroq, _ := reader.ReadString('\n')
-		inputGroq = strings.TrimSpace(inputGroq)
-		if inputGroq != "" {
-			cfg.GroqAPIKey = inputGroq
-		}
-	}
-
-	if err := cfg.Save(configPath); err != nil {
-		fmt.Printf("\nError guardando configuracion: %v\n", err)
-		return
-	}
-
-	fmt.Printf("\nConfiguracion guardada exitosamente en %s\n", configPath)
-	fmt.Println("Ahora puede iniciar Felix con: ./bin/felix")
-	fmt.Println("==============================================================")
-}
-
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "setup" || os.Args[1] == "init") {
-		runSetupWizard("config.json")
+	cfgPath := "config.json"
+	args := os.Args[1:]
+	var subCmd string
+	var subArgs []string
+	var cliPrompt string
+	var setupMode bool
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "-c" || a == "--config" {
+			if i+1 < len(args) {
+				cfgPath = args[i+1]
+				i++
+			}
+		} else if a == "--cli" {
+			if i+1 < len(args) {
+				cliPrompt = args[i+1]
+				i++
+			}
+		} else if a == "-s" || a == "--setup" {
+			setupMode = true
+		} else if a == "-h" || a == "--help" || a == "help" {
+			PrintHelp()
+			return
+		} else if subCmd == "" && !strings.HasPrefix(a, "-") {
+			subCmd = strings.ToLower(a)
+			subArgs = args[i+1:]
+			break
+		}
+	}
+
+	if setupMode || subCmd == "setup" || subCmd == "onboard" || subCmd == "init" {
+		runSetupWizard(cfgPath)
 		return
 	}
 
-	configPath := flag.String("config", "config.json", "Ruta al archivo config.json")
-	cliPrompt := flag.String("cli", "", "Ejecutar una peticion interactiva directa por linea de comandos y mostrar el bucle de herramientas")
-	setupFlag := flag.Bool("setup", false, "Iniciar el asistente interactivo de configuracion")
-	flag.Parse()
-
-	if *setupFlag {
-		runSetupWizard(*configPath)
+	if subCmd == "login" || subCmd == "auth" || subCmd == "status" || subCmd == "doctor" {
+		RunAuthManager(cfgPath)
 		return
 	}
 
-	log.Println("Iniciando Felix (Agente Autonomo de Ingenieria y DevOps)...")
+	// Menu interactivo si se ejecuta sin argumentos en una terminal interactiva
+	if len(args) == 0 && isTerminal() {
+		PrintMOTD()
+		fmt.Println("Flujo Principal:")
+		fmt.Println("  [1] Iniciar Chat Interactivo en Terminal (felix chat)")
+		fmt.Println("  [2] Asistente de Configuracion y Login OAuth (Google / OpenAI / Antigravity)")
+		fmt.Println("  [3] Estado y Diagnostico de Conexion (felix status)")
+		fmt.Println("  [4] Iniciar Servicio en Segundo Plano (felix daemon)")
+		fmt.Println("  [0] Salir")
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Print("Seleccione una opcion [0-4] o escriba un comando (o 'help'): ")
+		reader := bufio.NewReader(os.Stdin)
+		opt, _ := reader.ReadString('\n')
+		opt = strings.TrimSpace(opt)
+
+		switch opt {
+		case "1", "chat":
+			subCmd = "chat"
+		case "2", "setup", "onboard":
+			runSetupWizard(cfgPath)
+			return
+		case "3", "status", "auth", "login":
+			RunAuthManager(cfgPath)
+			return
+		case "4", "daemon", "server":
+			subCmd = "daemon"
+		case "0", "exit", "salir":
+			return
+		case "help", "-h", "--help":
+			PrintHelp()
+			return
+		default:
+			if opt != "" {
+				cliPrompt = opt
+			} else {
+				subCmd = "chat"
+			}
+		}
+	}
+
+	if subCmd != "chat" && cliPrompt == "" {
+		PrintMOTD()
+		log.Println("Iniciando Felix en segundo plano (Agente Autonomo de Ingenieria y DevOps)...")
+	}
 
 	// 1. Cargar configuracion
-	cfg, err := config.LoadConfig(*configPath)
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		log.Fatalf("Error cargando configuracion: %v", err)
 	}
@@ -195,7 +169,7 @@ func main() {
 	memStore := memory.NewStore(cfg.WorkspaceDir, cfg.DataDir)
 	contextMem := memStore.GetContextMemory(memory.MemoryContextOptions{
 		IsAdmin: true,
-		Query:   *cliPrompt,
+		Query:   cliPrompt,
 	})
 	reg.Register(&tools.MemoryManagerTool{Store: memStore})
 	if memStore.GetIndexer() != nil {
@@ -301,13 +275,22 @@ func main() {
 
 	log.Printf("Catalogo de herramientas inicializado: %d herramientas registradas", len(reg.GetOpenAISchemas()))
 
-	// MODO CLI: Permite probar el bucle de herramientas y razonamiento sin conexion a WhatsApp
-	if *cliPrompt != "" {
-		fmt.Printf("\n=== EJECUTANDO PROMPT EN MODO CLI ===\nPrompt: %s\n\n", *cliPrompt)
+	// Modo Chat Interactivo o Prompt Directo
+	if subCmd == "chat" && len(subArgs) == 0 && cliPrompt == "" {
+		runInteractiveChat(engine, contextMem, sched)
+		return
+	}
+
+	if len(subArgs) > 0 && cliPrompt == "" {
+		cliPrompt = strings.Join(subArgs, " ")
+	}
+
+	if cliPrompt != "" {
+		fmt.Printf("\n=== EJECUTANDO PROMPT EN MODO CLI ===\nPrompt: %s\n\n", cliPrompt)
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 
-		reply, err := engine.Run(ctx, "cli-session", *cliPrompt, contextMem)
+		reply, err := engine.Run(ctx, "cli-session", cliPrompt, contextMem)
 		if err != nil {
 			log.Fatalf("Error en ejecucion agentica: %v", err)
 		}
