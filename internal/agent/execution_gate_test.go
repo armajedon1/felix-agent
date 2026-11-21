@@ -49,11 +49,11 @@ func TestIsAffirmativeOrExecutionCommand(t *testing.T) {
 
 func TestIsHesitatingOrAskingConfirmation(t *testing.T) {
 	hesitantCases := []string{
-		"Para habilitar el sandbox en dicho proyecto, se requiere ejecutar:\n```bash\ncd /home/matias/mosiah-go\ngit init\n```",
-		"El diagnóstico y los ajustes quedaron definidos. Confirmame si procedo con la inicialización del repo en mosiah-go",
+		"Para habilitar el sandbox en dicho proyecto, se requiere ejecutar:\n```bash\ncd /home/matias/proyecto-go\ngit init\n```",
+		"El diagnóstico y los ajustes quedaron definidos. Confirmame si procedo con la inicialización del repo en proyecto-go",
 		"Vos no tenés que hacer nada. ¿Avanzo con la ejecución ahora?",
 		"Resultados de la preparación. ¿Disparo la corrida completa ahora?",
-		"¿Querés que use mosiah o felix?",
+		"¿Querés que use claude o felix?",
 		"Aguardo tu confirmación para proceder con el despliegue.",
 		"Cuando me confirmes inicio las pruebas.",
 	}
