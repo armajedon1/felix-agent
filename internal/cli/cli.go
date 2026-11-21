@@ -82,6 +82,10 @@ func printQuickMenu() {
 	fmt.Print(" Seleccione una opcion [0-9/u] o ingrese un comando directo (o 'help'): ")
 }
 
+func clearScreen() {
+	fmt.Print("\033[H\033[2J")
+}
+
 func RunInteractiveMenu(configPath string) int {
 	fileInfo, err := os.Stdin.Stat()
 	if err != nil || (fileInfo.Mode()&os.ModeCharDevice) == 0 {
@@ -107,25 +111,27 @@ func RunInteractiveMenu(configPath string) int {
 		parts := strings.Fields(line)
 		first := strings.ToLower(parts[0])
 
+		clearScreen()
+
 		switch first {
 		case "1", "chat", "cli":
 			return CmdChat(parts[1:], configPath)
 		case "2", "setup", "onboard", "config":
-			return CmdOnboard(parts[1:], configPath)
+			CmdOnboard(parts[1:], configPath)
 		case "3", "desktop", "gui":
-			return CmdDesktop(parts[1:], configPath)
+			CmdDesktop(parts[1:], configPath)
 		case "4", "web":
-			return CmdWeb(parts[1:], configPath)
+			CmdWeb(parts[1:], configPath)
 		case "5", "status", "doctor":
 			CmdStatus(configPath)
 		case "6", "bots", "bot":
-			sub := []string{"list"}
+			sub := []string{}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdBots(sub, configPath)
 		case "7", "numbers", "number":
-			sub := []string{"list"}
+			sub := []string{}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
@@ -144,23 +150,26 @@ func RunInteractiveMenu(configPath string) int {
 			CmdLogs(sub, configPath)
 		case "u", "update", "upgrade":
 			CmdUpdate(parts[1:], configPath)
-			printQuickMenu()
 		case "help", "-h", "--help", "?":
 			PrintHelp()
-		case "clear":
-			fmt.Print("\033[H\033[2J")
-			PrintBanner()
-			printQuickMenu()
+		case "clear", "cls":
+			// pantalla ya limpia
 		default:
 			RunCLI(parts, configPath)
 		}
-		fmt.Print("\nfelix> ")
+
+		fmt.Print("\nPresione Enter para volver al menu principal...")
+		_, _ = reader.ReadString('\n')
+		clearScreen()
+		PrintBanner()
+		printQuickMenu()
 	}
 	return 0
 }
 
 func RunCLI(args []string, configPath string) int {
 	if len(args) == 0 {
+		clearScreen()
 		PrintBanner()
 		printQuickMenu()
 		return RunInteractiveMenu(configPath)
@@ -231,7 +240,7 @@ func PrintHelp() {
 	fmt.Println("  desktop / gui           Abre ventana de escritorio conectada a local o servidor")
 	fmt.Println("  web                     Inicia consola web ligera embebida en puerto 8056")
 	fmt.Println("  status                  Muestra el panel de salud, telemetria y estado en vivo")
-	fmt.Println("  bots [subcomando]       Gestor de bots (list, start, stop, avatar, create, show)")
+	fmt.Println("  bots [subcomando]       Gestor de bots (list, view, convs, conv, orders, db, start, stop)")
 	fmt.Println("  numbers [subcomando]    Matriz de lineas telefonicas y colisiones (list, assign, release)")
 	fmt.Println("  db [subcomando]         Administracion SQLite WAL (status, vacuum, backup)")
 	fmt.Println("  apis [list|test]        Catalogo de proveedores de inferencia y pruebas de latencia")
@@ -245,6 +254,9 @@ func PrintHelp() {
 	fmt.Println("Ejemplos:")
 	fmt.Println("  felix cli")
 	fmt.Println("  felix bots list")
+	fmt.Println("  felix bots view pizzeria-napoli")
+	fmt.Println("  felix bots convs pizzeria-napoli")
+	fmt.Println("  felix bots orders pizzeria-napoli")
 	fmt.Println("  felix bots start pizzeria-napoli")
 	fmt.Println("  felix bots stop pizzeria-napoli")
 	fmt.Println("  felix numbers list")
@@ -926,9 +938,9 @@ func CmdBots(args []string, configPath string) int {
 		}
 		fmt.Printf("Avatar del bot '%s' asignado exitosamente: %s\n", botID, destPath)
 
-	case "show", "inspect":
+	case "view", "show", "inspect":
 		if len(args) < 2 {
-			fmt.Println("Uso: felix bots show <bot_id>")
+			fmt.Println("Uso: felix bots view <bot_id>")
 			return 1
 		}
 		botID := args[1]
@@ -938,12 +950,25 @@ func CmdBots(args []string, configPath string) int {
 			return 1
 		}
 		stats, _ := store.GetStats(botID)
+		dbInfo, _ := store.GetBotDBInfo(botID)
+
+		channelDisp := "Web / CLI"
+		if spec.ChannelType == "whatsapp" || spec.PhoneNumber != "" {
+			channelDisp = fmt.Sprintf("WhatsApp (%s)", spec.PhoneNumber)
+		} else if spec.ChannelType == "telegram" || spec.TelegramToken != "" {
+			tgUser := spec.TelegramUsername
+			if tgUser == "" {
+				tgUser = "Token Configurado"
+			}
+			channelDisp = fmt.Sprintf("Telegram (@%s)", tgUser)
+		}
 
 		fmt.Println("================================================================================")
-		fmt.Printf("DETALLE DEL BOT: %s (%s)\n", spec.Name, spec.ID)
+		fmt.Printf("DETALLE DEL BOT ESTRUCTURADO: %s (%s)\n", spec.Name, spec.ID)
 		fmt.Println("================================================================================")
 		fmt.Printf("Tipo:                    %s\n", spec.Type)
-		fmt.Printf("Estado:                  %s\n", spec.Status)
+		fmt.Printf("Estado:                  %s\n", strings.ToUpper(spec.Status))
+		fmt.Printf("Canal de Comunicacion:   %s\n", channelDisp)
 		if len(spec.Nicknames) > 0 {
 			fmt.Printf("Apodos / Aliases:        %s\n", strings.Join(spec.Nicknames, ", "))
 		}
@@ -957,8 +982,94 @@ func CmdBots(args []string, configPath string) int {
 		fmt.Printf("Grounding Estricto:      %v\n", spec.StrictGrounding)
 		fmt.Printf("Items en Catalogo:       %d productos/servicios\n", len(spec.Catalog))
 		fmt.Printf("Preguntas Frecuentes:    %d entradas de FAQ\n", len(spec.FAQ))
-		fmt.Printf("Metricas en SQLite:      %d pedidos | %d turnos | %d mensajes\n",
-			stats.TotalOrders, stats.TotalAppointments, stats.TotalMessages)
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Println("Base de Datos Individual Normalizada:")
+		if dbInfo != nil {
+			fmt.Printf("  Ruta SQLite:           %s\n", dbInfo.DBPath)
+			fmt.Printf("  Tamano en Disco:       %d bytes (%.2f KB)\n", dbInfo.FileSizeBytes, float64(dbInfo.FileSizeBytes)/1024.0)
+			fmt.Printf("  Modo Journal:          %s (Atomicidad Garantizada)\n", strings.ToUpper(dbInfo.JournalMode))
+			fmt.Printf("  Tablas Normalizadas:   %s\n", strings.Join(dbInfo.Tables, ", "))
+		}
+		fmt.Println("--------------------------------------------------------------------------------")
+		totalOrders := int64(0)
+		totalAppts := int64(0)
+		totalMsgs := int64(0)
+		if stats != nil {
+			totalOrders = stats.TotalOrders
+			totalAppts = stats.TotalAppointments
+			totalMsgs = stats.TotalMessages
+		}
+		fmt.Printf("Metricas Registradas:    %d pedidos | %d turnos | %d mensajes\n",
+			totalOrders, totalAppts, totalMsgs)
+		fmt.Println("================================================================================")
+		fmt.Println("Subcomandos de consulta individual:")
+		fmt.Printf("  felix bots convs %s              Listar todas las sesiones de conversacion\n", botID)
+		fmt.Printf("  felix bots conv %s <sesion_id>   Ver historial de chat de una sesion\n", botID)
+		fmt.Printf("  felix bots orders %s             Ver pedidos tomados con desglose de items\n", botID)
+		fmt.Printf("  felix bots appointments %s       Ver turnos agendados\n", botID)
+		fmt.Printf("  felix bots db %s                 Ver estructura y esquema DDL de su base\n", botID)
+		fmt.Println("================================================================================")
+
+	case "convs", "sessions":
+		if len(args) < 2 {
+			fmt.Println("Uso: felix bots convs <bot_id>")
+			return 1
+		}
+		botID := args[1]
+		sessions, err := store.ListBotSessions(botID)
+		if err != nil {
+			fmt.Printf("Error listando sesiones: %v\n", err)
+			return 1
+		}
+		fmt.Println("==========================================================================================================")
+		fmt.Printf("SESIONES Y CHATS REGISTRADOS: BOT '%s' (Total: %d)\n", botID, len(sessions))
+		fmt.Println("==========================================================================================================")
+		fmt.Printf("%-20s | %-16s | %-8s | %-16s | %-32s\n", "SESION / TELEFONO", "CLIENTE", "MSGS", "ULTIMA ACTIVIDAD", "ULTIMO MENSAJE")
+		fmt.Println("----------------------------------------------------------------------------------------------------------")
+		for _, s := range sessions {
+			cname := s.CustomerName
+			if cname == "" {
+				cname = "-"
+			}
+			lastMsg := s.LastMessage
+			if len(lastMsg) > 30 {
+				lastMsg = lastMsg[:27] + "..."
+			}
+			lastMsg = strings.ReplaceAll(lastMsg, "\n", " ")
+			fmt.Printf("%-20s | %-16s | %-8d | %-16s | %-32s\n",
+				s.SessionID, cname, s.MessageCount, s.UpdatedAt.Format("2006-01-02 15:04"), lastMsg)
+		}
+		if len(sessions) == 0 {
+			fmt.Println("No hay conversaciones registradas para este bot.")
+		}
+		fmt.Println("==========================================================================================================")
+		fmt.Printf("Para ver el chat completo de una sesion: felix bots conv %s <session_id>\n", botID)
+
+	case "conv", "conversation":
+		if len(args) < 3 {
+			fmt.Println("Uso: felix bots conv <bot_id> <session_id>")
+			return 1
+		}
+		botID := args[1]
+		sessionID := args[2]
+		msgs, err := store.GetBotConversation(botID, sessionID)
+		if err != nil {
+			fmt.Printf("Error obteniendo conversacion: %v\n", err)
+			return 1
+		}
+		fmt.Println("================================================================================")
+		fmt.Printf("HISTORIAL DE CONVERSACION: Bot '%s' | Sesion '%s'\n", botID, sessionID)
+		fmt.Println("================================================================================")
+		for _, m := range msgs {
+			roleLabel := "CLIENTE"
+			if m.Role == "assistant" {
+				roleLabel = fmt.Sprintf("BOT (%s)", botID)
+			}
+			fmt.Printf("[%s] %s:\n%s\n\n", m.CreatedAt.Format("2006-01-02 15:04:05"), roleLabel, m.Content)
+		}
+		if len(msgs) == 0 {
+			fmt.Println("No hay mensajes registrados en esta sesion.")
+		}
 		fmt.Println("================================================================================")
 
 	case "create":
@@ -1068,20 +1179,32 @@ func CmdBots(args []string, configPath string) int {
 			fmt.Println("Uso: felix bots orders <bot_id>")
 			return 1
 		}
-		orders, err := store.ListOrders(args[1], 50)
+		botID := args[1]
+		orders, err := store.ListOrders(botID, 50)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Printf("Error listando pedidos: %v\n", err)
 			return 1
 		}
 		fmt.Println("================================================================================")
-		fmt.Printf("%-4s | %-16s | %-12s | %-18s | %-12s\n", "ID", "CLIENTE", "TOTAL", "DIRECCION", "PAGO")
-		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Printf("PEDIDOS REGISTRADOS (DB NORMALIZADA ATOMICA): BOT '%s'\n", botID)
+		fmt.Println("================================================================================")
 		for _, o := range orders {
-			fmt.Printf("%-4d | %-16s | $%-11.2f | %-18s | %-12s\n", o.ID, o.CustomerName, o.Total, o.DeliveryAddress, o.PaymentMethod)
+			fmt.Printf("ID: #%-4d | FECHA: %s | ESTADO: %s\n", o.ID, o.CreatedAt.Format("2006-01-02 15:04:05"), strings.ToUpper(o.Status))
+			fmt.Printf("CLIENTE: %s (%s) | PAGO: %s\n", o.CustomerName, o.CustomerPhone, o.PaymentMethod)
+			fmt.Printf("DIRECCION: %s\n", o.DeliveryAddress)
+			if len(o.Items) > 0 {
+				fmt.Println("ARTICULOS (order_items):")
+				for _, it := range o.Items {
+					fmt.Printf("  - %dx %s ($%.2f c/u) = $%.2f\n", it.Quantity, it.Name, it.UnitPrice, it.Subtotal)
+				}
+			}
+			fmt.Printf("TOTAL: $%.2f\n", o.Total)
+			fmt.Println("--------------------------------------------------------------------------------")
 		}
 		if len(orders) == 0 {
 			fmt.Println("No hay pedidos registrados para este bot.")
 		}
+		fmt.Printf("Total de pedidos: %d\n", len(orders))
 		fmt.Println("================================================================================")
 
 	case "appointments":
@@ -1089,11 +1212,14 @@ func CmdBots(args []string, configPath string) int {
 			fmt.Println("Uso: felix bots appointments <bot_id>")
 			return 1
 		}
-		apps, err := store.ListAppointments(args[1], 50)
+		botID := args[1]
+		apps, err := store.ListAppointments(botID, 50)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return 1
 		}
+		fmt.Println("================================================================================")
+		fmt.Printf("TURNOS AGENDADOS: BOT '%s'\n", botID)
 		fmt.Println("================================================================================")
 		fmt.Printf("%-4s | %-16s | %-20s | %-16s | %-10s\n", "ID", "CLIENTE", "SERVICIO", "FECHA Y HORA", "ESTADO")
 		fmt.Println("--------------------------------------------------------------------------------")
@@ -1102,6 +1228,34 @@ func CmdBots(args []string, configPath string) int {
 		}
 		if len(apps) == 0 {
 			fmt.Println("No hay turnos agendados para este bot.")
+		}
+		fmt.Println("================================================================================")
+
+	case "db":
+		if len(args) < 2 {
+			fmt.Println("Uso: felix bots db <bot_id>")
+			return 1
+		}
+		botID := args[1]
+		dbInfo, err := store.GetBotDBInfo(botID)
+		if err != nil {
+			fmt.Printf("Error obteniendo informacion de base de datos: %v\n", err)
+			return 1
+		}
+		fmt.Println("================================================================================")
+		fmt.Printf("BASE DE DATOS INDIVIDUAL NORMALIZADA: BOT '%s'\n", botID)
+		fmt.Println("================================================================================")
+		fmt.Printf("Ruta de Base de Datos:   %s\n", dbInfo.DBPath)
+		fmt.Printf("Tamano en Disco:         %d bytes (%.2f KB)\n", dbInfo.FileSizeBytes, float64(dbInfo.FileSizeBytes)/1024.0)
+		fmt.Printf("Modo Journal SQLite:     %s (Write-Ahead Logging)\n", strings.ToUpper(dbInfo.JournalMode))
+		fmt.Printf("Garantia Transaccional:  Atomicidad inmediata (BEGIN IMMEDIATE / COMMIT / ROLLBACK)\n")
+		fmt.Printf("Tablas Existentes:       %s\n", strings.Join(dbInfo.Tables, ", "))
+		fmt.Printf("Conteo de Registros:     %d pedidos | %d turnos | %d mensajes\n",
+			dbInfo.TotalOrders, dbInfo.TotalAppointments, dbInfo.TotalMessages)
+		fmt.Println("--------------------------------------------------------------------------------")
+		if dbInfo.SchemaDDL != "" {
+			fmt.Println("Esquema DDL de Tablas Normalizadas:")
+			fmt.Println(strings.TrimSpace(dbInfo.SchemaDDL))
 		}
 		fmt.Println("================================================================================")
 
@@ -1133,7 +1287,7 @@ func CmdBots(args []string, configPath string) int {
 		fmt.Printf("Bot '%s' eliminado correctamente.\n", args[1])
 
 	default:
-		fmt.Println("Acciones disponibles para 'felix bots': list, start, stop, avatar, show, create, replicate, chat, orders, appointments, export, delete")
+		fmt.Println("Acciones disponibles para 'felix bots': list, view, convs, conv, orders, appointments, db, start, stop, avatar, create, replicate, chat, export, delete")
 		return 1
 	}
 

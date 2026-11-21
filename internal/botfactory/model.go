@@ -67,6 +67,7 @@ type BotSpec struct {
 	TelegramUsername  string            `json:"telegram_username,omitempty"`
 	PairingCode       string            `json:"pairing_code,omitempty"`
 	AvatarPath        string            `json:"avatar_path,omitempty"`
+	DBSchema          string            `json:"db_schema,omitempty"`
 	IsActive          bool              `json:"is_active"`
 	Status            string            `json:"status"`
 	CreatedAt         time.Time         `json:"created_at"`
@@ -150,4 +151,25 @@ type BotStats struct {
 	TotalMessages     int64 `json:"total_messages"`
 	TotalOrders       int64 `json:"total_orders"`
 	TotalAppointments int64 `json:"total_appointments"`
+}
+
+type SessionSummary struct {
+	BotID        string    `json:"bot_id"`
+	SessionID    string    `json:"session_id"`
+	CustomerName string    `json:"customer_name,omitempty"`
+	LastMessage  string    `json:"last_message"`
+	MessageCount int       `json:"message_count"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type BotDBInfo struct {
+	BotID             string   `json:"bot_id"`
+	DBPath            string   `json:"db_path"`
+	FileSizeBytes     int64    `json:"file_size_bytes"`
+	JournalMode       string   `json:"journal_mode"`
+	Tables            []string `json:"tables"`
+	TotalOrders       int64    `json:"total_orders"`
+	TotalMessages     int64    `json:"total_messages"`
+	TotalAppointments int64    `json:"total_appointments"`
+	SchemaDDL         string   `json:"schema_ddl,omitempty"`
 }

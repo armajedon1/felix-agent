@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,9 +14,11 @@ import (
 )
 
 type Storage struct {
-	dbPath string
-	db     *sql.DB
-	mu     sync.RWMutex
+	dbPath  string
+	dataDir string
+	db      *sql.DB
+	botDBs  map[string]*sql.DB
+	mu      sync.RWMutex
 }
 
 func NewStorage(dbPath string) (*Storage, error) {
@@ -31,8 +34,10 @@ func NewStorage(dbPath string) (*Storage, error) {
 	}
 
 	s := &Storage{
-		dbPath: dbPath,
-		db:     db,
+		dbPath:  dbPath,
+		dataDir: dir,
+		db:      db,
+		botDBs:  make(map[string]*sql.DB),
 	}
 
 	if err := s.initSchema(); err != nil {
@@ -237,9 +242,206 @@ func (s *Storage) ListBots() ([]*BotSpec, error) {
 	return result, nil
 }
 
+func sanitizeBotID(id string) string {
+	id = strings.TrimSpace(id)
+	id = strings.ReplaceAll(id, "..", "")
+	id = strings.ReplaceAll(id, "/", "")
+	id = strings.ReplaceAll(id, "\\", "")
+	if id == "" {
+		id = "default"
+	}
+	return id
+}
+
+func (s *Storage) GetBotDB(botID string) (*sql.DB, error) {
+	botID = sanitizeBotID(botID)
+
+	s.mu.RLock()
+	if db, exists := s.botDBs[botID]; exists && db != nil {
+		s.mu.RUnlock()
+		return db, nil
+	}
+	s.mu.RUnlock()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if db, exists := s.botDBs[botID]; exists && db != nil {
+		return db, nil
+	}
+
+	botDir := filepath.Join(s.dataDir, "bots", botID)
+	if err := os.MkdirAll(botDir, 0755); err != nil {
+		return nil, fmt.Errorf("error creando directorio para bot %s: %w", botID, err)
+	}
+
+	botDBPath := filepath.Join(botDir, "data.db")
+	_, statErr := os.Stat(botDBPath)
+	isNew := os.IsNotExist(statErr)
+
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)", botDBPath)
+	botDB, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("error abriendo base de bot %s: %w", botID, err)
+	}
+
+	if err := s.initBotIndividualSchema(botDB, botID); err != nil {
+		botDB.Close()
+		return nil, fmt.Errorf("error inicializando esquema de bot %s: %w", botID, err)
+	}
+
+	if isNew {
+		s.migrateLegacyBotData(botDB, botID)
+	}
+
+	s.botDBs[botID] = botDB
+	return botDB, nil
+}
+
+func (s *Storage) initBotIndividualSchema(botDB *sql.DB, botID string) error {
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS sessions (
+			session_id TEXT PRIMARY KEY,
+			customer_phone TEXT,
+			customer_name TEXT,
+			last_message TEXT,
+			message_count INTEGER DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			created_at DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id ASC);`,
+		`CREATE TABLE IF NOT EXISTS orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT,
+			customer_phone TEXT,
+			customer_name TEXT,
+			delivery_address TEXT,
+			payment_method TEXT,
+			total REAL NOT NULL,
+			status TEXT NOT NULL,
+			notes TEXT,
+			created_at DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);`,
+		`CREATE TABLE IF NOT EXISTS order_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			order_id INTEGER NOT NULL,
+			catalog_item_id TEXT,
+			name TEXT NOT NULL,
+			quantity INTEGER NOT NULL,
+			unit_price REAL NOT NULL,
+			subtotal REAL NOT NULL,
+			FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);`,
+		`CREATE TABLE IF NOT EXISTS appointments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT,
+			customer_phone TEXT,
+			customer_name TEXT,
+			service TEXT NOT NULL,
+			start_time DATETIME NOT NULL,
+			duration_minutes INTEGER NOT NULL,
+			notes TEXT,
+			status TEXT NOT NULL,
+			created_at DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_appointments_time ON appointments(start_time ASC);`,
+	}
+
+	for _, q := range queries {
+		if _, err := botDB.Exec(q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Storage) migrateLegacyBotData(botDB *sql.DB, botID string) {
+	msgRows, err := s.db.Query("SELECT session_id, role, content, created_at FROM bot_messages WHERE bot_id = ? ORDER BY id ASC", botID)
+	if err == nil {
+		defer msgRows.Close()
+		for msgRows.Next() {
+			var sid, role, content string
+			var catRaw any
+			if err := msgRows.Scan(&sid, &role, &content, &catRaw); err == nil {
+				cat := parseSQLiteTime(catRaw)
+				_, _ = botDB.Exec(`INSERT INTO sessions (session_id, customer_phone, last_message, message_count, created_at, updated_at)
+					VALUES (?, ?, ?, 1, ?, ?)
+					ON CONFLICT(session_id) DO UPDATE SET
+						last_message = excluded.last_message,
+						message_count = sessions.message_count + 1,
+						updated_at = excluded.updated_at;`, sid, sid, content, cat, cat)
+				_, _ = botDB.Exec(`INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)`, sid, role, content, cat)
+			}
+		}
+	}
+
+	orderRows, err := s.db.Query("SELECT id, customer_phone, customer_name, items_json, total, address, payment_method, status, created_at FROM bot_orders WHERE bot_id = ?", botID)
+	if err == nil {
+		defer orderRows.Close()
+		for orderRows.Next() {
+			var id int64
+			var cphone, cname, itemsJSON, addr, pay, status string
+			var total float64
+			var catRaw any
+			if err := orderRows.Scan(&id, &cphone, &cname, &itemsJSON, &total, &addr, &pay, &status, &catRaw); err == nil {
+				cat := parseSQLiteTime(catRaw)
+				_, _ = botDB.Exec(`INSERT INTO orders (id, session_id, customer_phone, customer_name, delivery_address, payment_method, total, status, created_at)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, cphone, cphone, cname, addr, pay, total, status, cat)
+				var items []OrderItem
+				if json.Unmarshal([]byte(itemsJSON), &items) == nil {
+					for _, it := range items {
+						_, _ = botDB.Exec(`INSERT INTO order_items (order_id, catalog_item_id, name, quantity, unit_price, subtotal)
+							VALUES (?, ?, ?, ?, ?, ?)`, id, it.CatalogItemID, it.Name, it.Quantity, it.UnitPrice, it.Subtotal)
+					}
+				}
+			}
+		}
+	}
+
+	appRows, err := s.db.Query("SELECT id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at FROM bot_appointments WHERE bot_id = ?", botID)
+	if err == nil {
+		defer appRows.Close()
+		for appRows.Next() {
+			var id int64
+			var cphone, cname, serv, status string
+			var dur int
+			var notes sql.NullString
+			var startRaw, catRaw any
+			if err := appRows.Scan(&id, &cphone, &cname, &serv, &startRaw, &dur, &notes, &status, &catRaw); err == nil {
+				startT := parseSQLiteTime(startRaw)
+				catT := parseSQLiteTime(catRaw)
+				noteStr := ""
+				if notes.Valid {
+					noteStr = notes.String
+				}
+				_, _ = botDB.Exec(`INSERT INTO appointments (id, session_id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, cphone, cphone, cname, serv, startT, dur, noteStr, status, catT)
+			}
+		}
+	}
+}
+
 func (s *Storage) DeleteBot(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	cleanID := sanitizeBotID(id)
+	if botDB, ok := s.botDBs[cleanID]; ok && botDB != nil {
+		_ = botDB.Close()
+		delete(s.botDBs, cleanID)
+	}
+
+	botDir := filepath.Join(s.dataDir, "bots", cleanID)
+	_ = os.RemoveAll(botDir)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -275,16 +477,34 @@ func (s *Storage) DeleteBot(id string) error {
 }
 
 func (s *Storage) SaveMessage(msg *ChatMessage) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	botDB, err := s.GetBotDB(msg.BotID)
+	if err != nil {
+		return err
+	}
 
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
 	}
 
-	query := `INSERT INTO bot_messages (bot_id, session_id, role, content, created_at)
-		VALUES (?, ?, ?, ?, ?);`
-	res, err := s.db.Exec(query, msg.BotID, msg.SessionID, msg.Role, msg.Content, msg.CreatedAt)
+	tx, err := botDB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	sessQuery := `INSERT INTO sessions (session_id, customer_phone, last_message, message_count, created_at, updated_at)
+		VALUES (?, ?, ?, 1, ?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			last_message = excluded.last_message,
+			message_count = sessions.message_count + 1,
+			updated_at = excluded.updated_at;`
+	if _, err := tx.Exec(sessQuery, msg.SessionID, msg.SessionID, msg.Content, msg.CreatedAt, msg.CreatedAt); err != nil {
+		return err
+	}
+
+	msgQuery := `INSERT INTO messages (session_id, role, content, created_at)
+		VALUES (?, ?, ?, ?);`
+	res, err := tx.Exec(msgQuery, msg.SessionID, msg.Role, msg.Content, msg.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -292,23 +512,36 @@ func (s *Storage) SaveMessage(msg *ChatMessage) error {
 	if err == nil {
 		msg.ID = id
 	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	legacyQuery := `INSERT INTO bot_messages (bot_id, session_id, role, content, created_at)
+		VALUES (?, ?, ?, ?, ?);`
+	_, _ = s.db.Exec(legacyQuery, msg.BotID, msg.SessionID, msg.Role, msg.Content, msg.CreatedAt)
+	s.mu.Unlock()
+
 	return nil
 }
 
 func (s *Storage) GetRecentMessages(botID, sessionID string, limit int) ([]ChatMessage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return nil, err
+	}
 
 	if limit <= 0 {
 		limit = 10
 	}
 
-	query := `SELECT id, bot_id, session_id, role, content, created_at 
-		FROM bot_messages 
-		WHERE bot_id = ? AND session_id = ?
+	query := `SELECT id, session_id, role, content, created_at 
+		FROM messages 
+		WHERE session_id = ?
 		ORDER BY id DESC LIMIT ?;`
 
-	rows, err := s.db.Query(query, botID, sessionID, limit)
+	rows, err := botDB.Query(query, sessionID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -317,9 +550,12 @@ func (s *Storage) GetRecentMessages(botID, sessionID string, limit int) ([]ChatM
 	var descMsgs []ChatMessage
 	for rows.Next() {
 		var m ChatMessage
-		if err := rows.Scan(&m.ID, &m.BotID, &m.SessionID, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+		var catRaw any
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &catRaw); err != nil {
 			return nil, err
 		}
+		m.BotID = botID
+		m.CreatedAt = parseSQLiteTime(catRaw)
 		descMsgs = append(descMsgs, m)
 	}
 
@@ -331,9 +567,69 @@ func (s *Storage) GetRecentMessages(botID, sessionID string, limit int) ([]ChatM
 	return result, nil
 }
 
+func (s *Storage) ListBotSessions(botID string) ([]SessionSummary, error) {
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `SELECT session_id, COALESCE(customer_name, ''), last_message, message_count, updated_at
+		FROM sessions ORDER BY updated_at DESC LIMIT 100;`
+	rows, err := botDB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []SessionSummary
+	for rows.Next() {
+		var sess SessionSummary
+		var updatedRaw any
+		if err := rows.Scan(&sess.SessionID, &sess.CustomerName, &sess.LastMessage, &sess.MessageCount, &updatedRaw); err != nil {
+			continue
+		}
+		sess.BotID = botID
+		sess.UpdatedAt = parseSQLiteTime(updatedRaw)
+		sessions = append(sessions, sess)
+	}
+
+	return sessions, nil
+}
+
+func (s *Storage) GetBotConversation(botID, sessionID string) ([]ChatMessage, error) {
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `SELECT id, session_id, role, content, created_at
+		FROM messages WHERE session_id = ? ORDER BY id ASC;`
+	rows, err := botDB.Query(query, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var msgs []ChatMessage
+	for rows.Next() {
+		var m ChatMessage
+		var catRaw any
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &catRaw); err != nil {
+			continue
+		}
+		m.BotID = botID
+		m.CreatedAt = parseSQLiteTime(catRaw)
+		msgs = append(msgs, m)
+	}
+
+	return msgs, nil
+}
+
 func (s *Storage) SaveOrder(order *OrderRecord) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	botDB, err := s.GetBotDB(order.BotID)
+	if err != nil {
+		return 0, err
+	}
 
 	if order.CreatedAt.IsZero() {
 		order.CreatedAt = time.Now().UTC()
@@ -342,41 +638,60 @@ func (s *Storage) SaveOrder(order *OrderRecord) (int64, error) {
 		order.Status = "confirmed"
 	}
 
-	itemsRaw, err := json.Marshal(order.Items)
+	tx, err := botDB.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("error serializando items de orden: %w", err)
+		return 0, err
 	}
+	defer tx.Rollback()
 
-	query := `INSERT INTO bot_orders (bot_id, customer_phone, customer_name, items_json, total, address, payment_method, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`
-
-	res, err := s.db.Exec(query, order.BotID, order.CustomerPhone, order.CustomerName, string(itemsRaw), order.Total, order.DeliveryAddress, order.PaymentMethod, order.Status, order.CreatedAt)
+	orderQuery := `INSERT INTO orders (session_id, customer_phone, customer_name, delivery_address, payment_method, total, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?);`
+	res, err := tx.Exec(orderQuery, order.CustomerPhone, order.CustomerPhone, order.CustomerName, order.DeliveryAddress, order.PaymentMethod, order.Total, order.Status, order.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
 
-	id, err := res.LastInsertId()
+	orderID, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
-	order.ID = id
-	return id, nil
+
+	itemQuery := `INSERT INTO order_items (order_id, catalog_item_id, name, quantity, unit_price, subtotal)
+		VALUES (?, ?, ?, ?, ?, ?);`
+	for _, it := range order.Items {
+		if _, err := tx.Exec(itemQuery, orderID, it.CatalogItemID, it.Name, it.Quantity, it.UnitPrice, it.Subtotal); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	order.ID = orderID
+
+	s.mu.Lock()
+	itemsRaw, _ := json.Marshal(order.Items)
+	legacyQuery := `INSERT INTO bot_orders (id, bot_id, customer_phone, customer_name, items_json, total, address, payment_method, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	_, _ = s.db.Exec(legacyQuery, orderID, order.BotID, order.CustomerPhone, order.CustomerName, string(itemsRaw), order.Total, order.DeliveryAddress, order.PaymentMethod, order.Status, order.CreatedAt)
+	s.mu.Unlock()
+
+	return orderID, nil
 }
 
 func (s *Storage) ListOrders(botID string, limit int) ([]OrderRecord, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return nil, err
+	}
 
 	if limit <= 0 {
 		limit = 50
 	}
 
-	query := `SELECT id, bot_id, customer_phone, customer_name, items_json, total, address, payment_method, status, created_at
-		FROM bot_orders
-		WHERE bot_id = ?
-		ORDER BY id DESC LIMIT ?;`
-
-	rows, err := s.db.Query(query, botID, limit)
+	query := `SELECT id, session_id, customer_phone, customer_name, delivery_address, payment_method, total, status, created_at
+		FROM orders ORDER BY id DESC LIMIT ?;`
+	rows, err := botDB.Query(query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -385,20 +700,39 @@ func (s *Storage) ListOrders(botID string, limit int) ([]OrderRecord, error) {
 	var orders []OrderRecord
 	for rows.Next() {
 		var o OrderRecord
-		var itemsRaw string
-		if err := rows.Scan(&o.ID, &o.BotID, &o.CustomerPhone, &o.CustomerName, &itemsRaw, &o.Total, &o.DeliveryAddress, &o.PaymentMethod, &o.Status, &o.CreatedAt); err != nil {
+		var sessID sql.NullString
+		var catRaw any
+		if err := rows.Scan(&o.ID, &sessID, &o.CustomerPhone, &o.CustomerName, &o.DeliveryAddress, &o.PaymentMethod, &o.Total, &o.Status, &catRaw); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(itemsRaw), &o.Items)
+		o.BotID = botID
+		o.CreatedAt = parseSQLiteTime(catRaw)
 		orders = append(orders, o)
+	}
+	rows.Close()
+
+	itemQuery := `SELECT catalog_item_id, name, quantity, unit_price, subtotal FROM order_items WHERE order_id = ?;`
+	for i := range orders {
+		itemRows, err := botDB.Query(itemQuery, orders[i].ID)
+		if err != nil {
+			continue
+		}
+		for itemRows.Next() {
+			var it OrderItem
+			_ = itemRows.Scan(&it.CatalogItemID, &it.Name, &it.Quantity, &it.UnitPrice, &it.Subtotal)
+			orders[i].Items = append(orders[i].Items, it)
+		}
+		itemRows.Close()
 	}
 
 	return orders, nil
 }
 
 func (s *Storage) SaveAppointment(app *AppointmentRecord) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	botDB, err := s.GetBotDB(app.BotID)
+	if err != nil {
+		return 0, err
+	}
 
 	if app.CreatedAt.IsZero() {
 		app.CreatedAt = time.Now().UTC()
@@ -410,10 +744,9 @@ func (s *Storage) SaveAppointment(app *AppointmentRecord) (int64, error) {
 		app.DurationMinutes = 30
 	}
 
-	query := `INSERT INTO bot_appointments (bot_id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at)
+	query := `INSERT INTO appointments (session_id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`
-
-	res, err := s.db.Exec(query, app.BotID, app.CustomerPhone, app.CustomerName, app.Service, app.StartTime, app.DurationMinutes, app.Notes, app.Status, app.CreatedAt)
+	res, err := botDB.Exec(query, app.CustomerPhone, app.CustomerPhone, app.CustomerName, app.Service, app.StartTime, app.DurationMinutes, app.Notes, app.Status, app.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -423,23 +756,29 @@ func (s *Storage) SaveAppointment(app *AppointmentRecord) (int64, error) {
 		return 0, err
 	}
 	app.ID = id
+
+	s.mu.Lock()
+	legacyQuery := `INSERT INTO bot_appointments (id, bot_id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	_, _ = s.db.Exec(legacyQuery, id, app.BotID, app.CustomerPhone, app.CustomerName, app.Service, app.StartTime, app.DurationMinutes, app.Notes, app.Status, app.CreatedAt)
+	s.mu.Unlock()
+
 	return id, nil
 }
 
 func (s *Storage) ListAppointments(botID string, limit int) ([]AppointmentRecord, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return nil, err
+	}
 
 	if limit <= 0 {
 		limit = 50
 	}
 
-	query := `SELECT id, bot_id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at
-		FROM bot_appointments
-		WHERE bot_id = ?
-		ORDER BY start_time ASC LIMIT ?;`
-
-	rows, err := s.db.Query(query, botID, limit)
+	query := `SELECT id, session_id, customer_phone, customer_name, service, start_time, duration_minutes, notes, status, created_at
+		FROM appointments ORDER BY start_time ASC LIMIT ?;`
+	rows, err := botDB.Query(query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -448,10 +787,14 @@ func (s *Storage) ListAppointments(botID string, limit int) ([]AppointmentRecord
 	var list []AppointmentRecord
 	for rows.Next() {
 		var a AppointmentRecord
-		var notes sql.NullString
-		if err := rows.Scan(&a.ID, &a.BotID, &a.CustomerPhone, &a.CustomerName, &a.Service, &a.StartTime, &a.DurationMinutes, &notes, &a.Status, &a.CreatedAt); err != nil {
-			return nil, err
+		var sessID, notes sql.NullString
+		var startRaw, catRaw any
+		if err := rows.Scan(&a.ID, &sessID, &a.CustomerPhone, &a.CustomerName, &a.Service, &startRaw, &a.DurationMinutes, &notes, &a.Status, &catRaw); err != nil {
+			continue
 		}
+		a.BotID = botID
+		a.StartTime = parseSQLiteTime(startRaw)
+		a.CreatedAt = parseSQLiteTime(catRaw)
 		if notes.Valid {
 			a.Notes = notes.String
 		}
@@ -462,20 +805,20 @@ func (s *Storage) ListAppointments(botID string, limit int) ([]AppointmentRecord
 }
 
 func (s *Storage) HasAppointmentConflict(botID string, startTime time.Time, durationMinutes int) (bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return false, err
+	}
 
 	endTime := startTime.Add(time.Duration(durationMinutes) * time.Minute)
-
-	query := `SELECT id, start_time, duration_minutes 
-		FROM bot_appointments 
-		WHERE bot_id = ? AND status = 'scheduled'
-		AND start_time >= ? AND start_time <= ?;`
-
 	searchWindowStart := startTime.Add(-2 * time.Hour)
 	searchWindowEnd := endTime.Add(2 * time.Hour)
 
-	rows, err := s.db.Query(query, botID, searchWindowStart, searchWindowEnd)
+	query := `SELECT id, start_time, duration_minutes 
+		FROM appointments 
+		WHERE status = 'scheduled'
+		AND start_time >= ? AND start_time <= ?;`
+	rows, err := botDB.Query(query, searchWindowStart, searchWindowEnd)
 	if err != nil {
 		return false, err
 	}
@@ -483,13 +826,13 @@ func (s *Storage) HasAppointmentConflict(botID string, startTime time.Time, dura
 
 	for rows.Next() {
 		var id int64
-		var existStart time.Time
+		var startRaw any
 		var existDuration int
-		if err := rows.Scan(&id, &existStart, &existDuration); err != nil {
+		if err := rows.Scan(&id, &startRaw, &existDuration); err != nil {
 			return false, err
 		}
+		existStart := parseSQLiteTime(startRaw)
 		existEnd := existStart.Add(time.Duration(existDuration) * time.Minute)
-
 		if startTime.Before(existEnd) && endTime.After(existStart) {
 			return true, nil
 		}
@@ -499,6 +842,15 @@ func (s *Storage) HasAppointmentConflict(botID string, startTime time.Time, dura
 }
 
 func (s *Storage) GetStats(botID string) (*BotStats, error) {
+	botDB, err := s.GetBotDB(botID)
+	if err == nil {
+		stats := &BotStats{}
+		_ = botDB.QueryRow("SELECT COUNT(*) FROM messages").Scan(&stats.TotalMessages)
+		_ = botDB.QueryRow("SELECT COUNT(*) FROM orders").Scan(&stats.TotalOrders)
+		_ = botDB.QueryRow("SELECT COUNT(*) FROM appointments").Scan(&stats.TotalAppointments)
+		return stats, nil
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -508,6 +860,59 @@ func (s *Storage) GetStats(botID string) (*BotStats, error) {
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM bot_appointments WHERE bot_id = ?", botID).Scan(&stats.TotalAppointments)
 
 	return stats, nil
+}
+
+func (s *Storage) GetBotDBInfo(botID string) (*BotDBInfo, error) {
+	botDB, err := s.GetBotDB(botID)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanID := sanitizeBotID(botID)
+	botDir := filepath.Join(s.dataDir, "bots", cleanID)
+	botDBPath := filepath.Join(botDir, "data.db")
+
+	info := &BotDBInfo{
+		BotID:  cleanID,
+		DBPath: botDBPath,
+	}
+
+	if stat, err := os.Stat(botDBPath); err == nil {
+		info.FileSizeBytes = stat.Size()
+	}
+
+	_ = botDB.QueryRow("PRAGMA journal_mode;").Scan(&info.JournalMode)
+
+	tableRows, err := botDB.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name ASC;")
+	if err == nil {
+		defer tableRows.Close()
+		for tableRows.Next() {
+			var name string
+			if err := tableRows.Scan(&name); err == nil {
+				info.Tables = append(info.Tables, name)
+			}
+		}
+	}
+
+	_ = botDB.QueryRow("SELECT COUNT(*) FROM orders;").Scan(&info.TotalOrders)
+	_ = botDB.QueryRow("SELECT COUNT(*) FROM messages;").Scan(&info.TotalMessages)
+	_ = botDB.QueryRow("SELECT COUNT(*) FROM appointments;").Scan(&info.TotalAppointments)
+
+	ddlRows, err := botDB.Query("SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+	if err == nil {
+		defer ddlRows.Close()
+		var ddlBuilder strings.Builder
+		for ddlRows.Next() {
+			var sqlStmt sql.NullString
+			if err := ddlRows.Scan(&sqlStmt); err == nil && sqlStmt.Valid {
+				ddlBuilder.WriteString(sqlStmt.String)
+				ddlBuilder.WriteString(";\n\n")
+			}
+		}
+		info.SchemaDDL = ddlBuilder.String()
+	}
+
+	return info, nil
 }
 
 func (s *Storage) AssignNumber(botID, phoneNumber string) error {
@@ -949,6 +1354,14 @@ func (s *Storage) GetAllBotLogs(limit int, level string) ([]BotLogEntry, error) 
 func (s *Storage) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	for _, botDB := range s.botDBs {
+		if botDB != nil {
+			_ = botDB.Close()
+		}
+	}
+	s.botDBs = make(map[string]*sql.DB)
+
 	if s.db != nil {
 		return s.db.Close()
 	}

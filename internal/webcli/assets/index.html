@@ -606,6 +606,90 @@
       box-shadow: 0 10px 25px rgba(0,0,0,0.15);
     }
 
+    .modal-lg {
+      max-width: 960px;
+      width: 95%;
+    }
+
+    .chat-split {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 12px;
+      height: 480px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg-main);
+    }
+
+    .chat-session-list {
+      background: var(--bg-card);
+      border-right: 1px solid var(--border-color);
+      overflow-y: auto;
+    }
+
+    .chat-session-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .chat-session-item:hover {
+      background: rgba(0,0,0,0.03);
+    }
+
+    .chat-session-item.active {
+      background: rgba(37, 99, 235, 0.08);
+      border-left: 3px solid var(--primary);
+    }
+
+    .chat-window {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #f8fafc;
+      overflow: hidden;
+    }
+
+    .chat-messages-container {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-bubble-user {
+      align-self: flex-start;
+      max-width: 75%;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px 8px 8px 2px;
+      padding: 10px 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .chat-bubble-bot {
+      align-self: flex-end;
+      max-width: 75%;
+      background: #dbeafe;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px 8px 2px 8px;
+      padding: 10px 14px;
+      color: #1e3a8a;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .chat-bubble-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
     .modal-header {
       display: flex;
       justify-content: space-between;
@@ -1229,6 +1313,131 @@
   </div>
 </div>
 
+<!-- MODAL DETALLE INDIVIDUAL DE BOT Y CHATS -->
+<div class="modal-overlay" id="modalBotDetail">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="botDetailTitle">Detalle del Bot</div>
+        <div id="botDetailSubtitle" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;"></div>
+      </div>
+      <button class="btn" onclick="closeModal('modalBotDetail')">X</button>
+    </div>
+    
+    <div style="display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 16px;">
+      <button class="btn btn-primary" id="btnBotTabResumen" onclick="switchBotDetailTab('resumen')">Resumen y Base de Datos</button>
+      <button class="btn" id="btnBotTabChats" onclick="switchBotDetailTab('chats')">Conversaciones y Chats</button>
+      <button class="btn" id="btnBotTabOrders" onclick="switchBotDetailTab('orders')">Pedidos y Transacciones</button>
+      <button class="btn" id="btnBotTabAppts" onclick="switchBotDetailTab('appts')">Turnos</button>
+    </div>
+
+    <!-- PANEL 1: RESUMEN Y BASE DE DATOS INDIVIDUAL -->
+    <div id="botDetailPanelResumen">
+      <div class="grid-2" style="margin-bottom: 16px;">
+        <div class="card" style="margin-bottom: 0;">
+          <div class="card-title">Especificacion del Bot</div>
+          <table style="margin-top: 8px;">
+            <tr><td><strong>ID:</strong></td><td id="bdPropId">-</td></tr>
+            <tr><td><strong>Tipo:</strong></td><td id="bdPropType">-</td></tr>
+            <tr><td><strong>Canal:</strong></td><td id="bdPropChannel">-</td></tr>
+            <tr><td><strong>Linea / Usuario:</strong></td><td id="bdPropPhone">-</td></tr>
+            <tr><td><strong>Estado:</strong></td><td id="bdPropStatus">-</td></tr>
+            <tr><td><strong>Grounding:</strong></td><td id="bdPropGrounding">-</td></tr>
+          </table>
+          <div style="margin-top: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: var(--text-muted);">Prompt de Sistema:</label>
+            <div id="bdPropPrompt" style="font-size: 11px; background: #f1f5f9; padding: 8px; border-radius: 4px; max-height: 90px; overflow-y: auto; font-family: var(--font-mono); white-space: pre-wrap; margin-top: 4px;"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom: 0;">
+          <div class="card-title">Base de Datos Individual (SQLite WAL)</div>
+          <table style="margin-top: 8px;">
+            <tr><td><strong>Ruta:</strong></td><td id="bdDBPath" style="font-family: var(--font-mono); font-size: 11px; word-break: break-all;">-</td></tr>
+            <tr><td><strong>Tamano en Disco:</strong></td><td id="bdDBSize">-</td></tr>
+            <tr><td><strong>Modo Journal:</strong></td><td id="bdDBJournal"><span class="badge badge-success">WAL</span></td></tr>
+            <tr><td><strong>Atomicidad:</strong></td><td><span class="badge badge-success">Transacciones Atomicas (Immediate)</span></td></tr>
+            <tr><td><strong>Tablas Normalizadas:</strong></td><td id="bdDBTables" style="font-size: 11px;">-</td></tr>
+            <tr><td><strong>Total Registros:</strong></td><td id="bdDBCounts">-</td></tr>
+          </table>
+          <div style="margin-top: 10px;">
+            <label style="font-size: 11px; font-weight: bold; color: var(--text-muted);">Esquema DDL de Tablas:</label>
+            <pre id="bdDBSchema" style="font-size: 10px; background: #0f172a; color: #38bdf8; padding: 8px; border-radius: 4px; max-height: 120px; overflow-y: auto; margin-top: 4px;"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 2: CONVERSACIONES Y CHATS -->
+    <div id="botDetailPanelChats" style="display: none;">
+      <div class="chat-split">
+        <div class="chat-session-list" id="botSessionList">
+          <div style="padding: 12px; color: var(--text-muted); font-size: 12px;">Cargando sesiones de chat...</div>
+        </div>
+        <div class="chat-window">
+          <div style="padding: 10px 14px; background: #ffffff; border-bottom: 1px solid var(--border-color); font-weight: bold; font-size: 13px; display: flex; justify-content: space-between;" id="activeSessionHeader">
+            <span>Seleccione una conversacion</span>
+            <span id="activeSessionCount" style="font-size: 11px; color: var(--text-muted);"></span>
+          </div>
+          <div class="chat-messages-container" id="botChatMessages">
+            <div style="text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 12px;">Seleccione una sesion a la izquierda para visualizar el historial de mensajes.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 3: PEDIDOS Y TRANSACCIONES -->
+    <div id="botDetailPanelOrders" style="display: none;">
+      <div style="max-height: 480px; overflow-y: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Telefono</th>
+              <th>Articulos (order_items)</th>
+              <th>Total</th>
+              <th>Direccion de Entrega</th>
+              <th>Metodo Pago</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="botOrdersTableBody">
+            <tr><td colspan="9">Cargando pedidos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PANEL 4: TURNOS -->
+    <div id="botDetailPanelAppts" style="display: none;">
+      <div style="max-height: 480px; overflow-y: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Fecha y Hora</th>
+              <th>Cliente</th>
+              <th>Telefono</th>
+              <th>Servicio</th>
+              <th>Duracion</th>
+              <th>Notas</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="botApptsTableBody">
+            <tr><td colspan="8">Cargando turnos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modalBotDetail')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <script>
   let currentTab = 'chat';
   let activeApiBase = localStorage.getItem('felix_remote_url') || '';
@@ -1596,6 +1805,7 @@
             <td>${statusBadge}</td>
             <td style="font-size: 11px; color: var(--text-muted);">${b.total_orders || 0} ped. | ${b.total_appointments || 0} tur.</td>
             <td>
+              <button class="btn btn-primary" onclick="openBotDetailModal('${b.id}')">Ver / Chats</button>
               <button class="btn ${toggleClass}" onclick="${toggleAction}">${toggleText}</button>
               <button class="btn" onclick="openEditBotModal('${b.id}')">Editar</button>
               <button class="btn" onclick="openReplicateModal('${b.id}')">Clonar</button>
@@ -1610,6 +1820,214 @@
       }
     } catch (err) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="color:red;">Error cargando bots: ${err.message}</td></tr>`;
+    }
+  }
+
+  let activeDetailBotId = null;
+  let activeDetailSessionId = null;
+
+  async function openBotDetailModal(botId) {
+    activeDetailBotId = botId;
+    activeDetailSessionId = null;
+    switchBotDetailTab('resumen');
+    document.getElementById('modalBotDetail').classList.add('active');
+
+    try {
+      const res = await fetch((activeApiBase || '') + `/api/v1/bots/${botId}/detail`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error cargando detalle');
+
+      const b = data.bot || {};
+      const dbInfo = data.db_info || {};
+      const stats = data.stats || {};
+
+      document.getElementById('botDetailTitle').innerText = `${b.name} (${b.id})`;
+      document.getElementById('botDetailSubtitle').innerText = `Tipo: ${b.type} | Canal: ${b.channel_type || 'web'} | Creado: ${new Date(b.created_at).toLocaleString()}`;
+
+      document.getElementById('bdPropId').innerText = b.id;
+      document.getElementById('bdPropType').innerHTML = `<code>${b.type}</code>`;
+      document.getElementById('bdPropChannel').innerText = (b.channel_type || 'web').toUpperCase();
+      document.getElementById('bdPropPhone').innerText = b.phone_number || b.telegram_username || 'Consola Web / CLI';
+      document.getElementById('bdPropStatus').innerHTML = (b.status === 'active' || b.is_active) ? '<span class="badge badge-success">ONLINE</span>' : '<span class="badge badge-danger">OFFLINE</span>';
+      document.getElementById('bdPropGrounding').innerText = b.strict_grounding ? 'Activo (Estricto)' : 'Inactivo';
+      document.getElementById('bdPropPrompt').innerText = b.system_prompt || 'Sin prompt especifico';
+
+      document.getElementById('bdDBPath').innerText = dbInfo.db_path || '-';
+      const sizeKb = dbInfo.file_size_bytes ? (dbInfo.file_size_bytes / 1024).toFixed(2) + ' KB' : '0 KB';
+      document.getElementById('bdDBSize').innerText = `${sizeKb} (${dbInfo.file_size_bytes || 0} bytes)`;
+      document.getElementById('bdDBJournal').innerHTML = `<span class="badge badge-success">${(dbInfo.journal_mode || 'WAL').toUpperCase()}</span>`;
+      document.getElementById('bdDBTables').innerText = (dbInfo.tables || []).join(', ') || 'sessions, messages, orders, order_items, appointments';
+      document.getElementById('bdDBCounts').innerText = `${stats.total_orders || dbInfo.total_orders || 0} pedidos | ${stats.total_appointments || dbInfo.total_appointments || 0} turnos | ${stats.total_messages || dbInfo.total_messages || 0} mensajes`;
+      document.getElementById('bdDBSchema').innerText = dbInfo.schema_ddl || 'Esquema estandar SQLite inicializado en modo WAL.';
+    } catch (err) {
+      alert('Error cargando detalle del bot: ' + err.message);
+    }
+  }
+
+  function switchBotDetailTab(tabName) {
+    const tabs = ['resumen', 'chats', 'orders', 'appts'];
+    tabs.forEach(t => {
+      const panel = document.getElementById('botDetailPanel' + t.charAt(0).toUpperCase() + t.slice(1));
+      const btn = document.getElementById('btnBotTab' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (panel) panel.style.display = (t === tabName) ? 'block' : 'none';
+      if (btn) {
+        if (t === tabName) {
+          btn.classList.add('btn-primary');
+        } else {
+          btn.classList.remove('btn-primary');
+        }
+      }
+    });
+
+    if (activeDetailBotId) {
+      if (tabName === 'chats') loadBotSessions(activeDetailBotId);
+      if (tabName === 'orders') loadBotOrders(activeDetailBotId);
+      if (tabName === 'appts') loadBotAppointments(activeDetailBotId);
+    }
+  }
+
+  async function loadBotSessions(botId) {
+    const listEl = document.getElementById('botSessionList');
+    listEl.innerHTML = '<div style="padding: 12px; color: var(--text-muted); font-size: 12px;">Cargando sesiones...</div>';
+
+    try {
+      const res = await fetch((activeApiBase || '') + `/api/v1/bots/${botId}/sessions`);
+      const sessions = await res.json();
+      if (!res.ok) throw new Error(sessions.error || 'Error al listar sesiones');
+
+      if (!sessions || sessions.length === 0) {
+        listEl.innerHTML = '<div style="padding: 16px; color: var(--text-muted); font-size: 12px; text-align: center;">No hay conversaciones registradas en la base de datos de este bot.</div>';
+        return;
+      }
+
+      listEl.innerHTML = sessions.map(s => {
+        const lastMsg = (s.last_message || '').slice(0, 35) + ((s.last_message || '').length > 35 ? '...' : '');
+        const dateStr = s.updated_at ? new Date(s.updated_at).toLocaleDateString() + ' ' + new Date(s.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+        const activeCls = (activeDetailSessionId === s.session_id) ? 'active' : '';
+
+        return `<div class="chat-session-item ${activeCls}" onclick="loadBotConversation('${botId}', '${s.session_id}')">
+          <div style="font-weight: bold; font-size: 12px; display: flex; justify-content: space-between;">
+            <span>${s.customer_name || s.session_id}</span>
+            <span style="font-size: 10px; color: var(--text-muted);">${s.message_count} msgs</span>
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${lastMsg}</div>
+          <div style="font-size: 9px; color: var(--text-muted); text-align: right; margin-top: 3px;">${dateStr}</div>
+        </div>`;
+      }).join('');
+
+      if (!activeDetailSessionId && sessions.length > 0) {
+        loadBotConversation(botId, sessions[0].session_id);
+      }
+    } catch (err) {
+      listEl.innerHTML = `<div style="padding: 12px; color: red; font-size: 12px;">Error: ${err.message}</div>`;
+    }
+  }
+
+  async function loadBotConversation(botId, sessionId) {
+    activeDetailSessionId = sessionId;
+    document.querySelectorAll('.chat-session-item').forEach(el => el.classList.remove('active'));
+
+    const header = document.getElementById('activeSessionHeader');
+    header.innerHTML = `<span>Sesion: ${sessionId}</span><span id="activeSessionCount" style="font-size: 11px; color: var(--text-muted);">Cargando...</span>`;
+
+    const container = document.getElementById('botChatMessages');
+    container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 12px;">Cargando mensajes...</div>';
+
+    try {
+      const res = await fetch((activeApiBase || '') + `/api/v1/bots/${botId}/conversations/${encodeURIComponent(sessionId)}`);
+      const msgs = await res.json();
+      if (!res.ok) throw new Error(msgs.error || 'Error al obtener mensajes');
+
+      document.getElementById('activeSessionCount').innerText = `${msgs.length} mensajes`;
+
+      if (!msgs || msgs.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 12px;">Sin mensajes en esta conversacion.</div>';
+        return;
+      }
+
+      container.innerHTML = msgs.map(m => {
+        const isBot = m.role === 'assistant';
+        const bubbleClass = isBot ? 'chat-bubble-bot' : 'chat-bubble-user';
+        const roleLabel = isBot ? `Bot (${botId})` : 'Cliente';
+        const timeStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+
+        return `<div class="${bubbleClass}">
+          <div style="font-size: 10px; font-weight: bold; margin-bottom: 3px; opacity: 0.8;">${roleLabel}</div>
+          <div style="font-size: 12px; line-height: 1.4; white-space: pre-wrap;">${escapeHtml(m.content)}</div>
+          <div class="chat-bubble-meta">${timeStr}</div>
+        </div>`;
+      }).join('');
+
+      container.scrollTop = container.scrollHeight;
+    } catch (err) {
+      container.innerHTML = `<div style="padding: 16px; color: red; font-size: 12px;">Error: ${err.message}</div>`;
+    }
+  }
+
+  async function loadBotOrders(botId) {
+    const tbody = document.getElementById('botOrdersTableBody');
+    tbody.innerHTML = '<tr><td colspan="9">Cargando pedidos de la base individual...</td></tr>';
+
+    try {
+      const res = await fetch((activeApiBase || '') + `/api/v1/bots/${botId}/orders`);
+      const orders = await res.json();
+      if (!res.ok) throw new Error(orders.error || 'Error al listar pedidos');
+
+      if (!orders || orders.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9">No hay pedidos registrados para este bot en su base de datos.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = orders.map(o => {
+        const itemsHtml = (o.items || []).map(it => `<div>${it.quantity}x ${it.name} ($${it.unit_price})</div>`).join('') || '-';
+        const dateStr = o.created_at ? new Date(o.created_at).toLocaleString() : '';
+
+        return `<tr>
+          <td><strong>#${o.id}</strong></td>
+          <td style="font-size: 11px;">${dateStr}</td>
+          <td>${o.customer_name || '-'}</td>
+          <td><code>${o.customer_phone || '-'}</code></td>
+          <td style="font-size: 11px;">${itemsHtml}</td>
+          <td><strong>$${(o.total || 0).toFixed(2)}</strong></td>
+          <td style="font-size: 11px;">${o.delivery_address || '-'}</td>
+          <td><span class="badge badge-info">${o.payment_method || 'efectivo'}</span></td>
+          <td><span class="badge badge-success">${o.status}</span></td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="9" style="color: red;">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  async function loadBotAppointments(botId) {
+    const tbody = document.getElementById('botApptsTableBody');
+    tbody.innerHTML = '<tr><td colspan="8">Cargando turnos de la base individual...</td></tr>';
+
+    try {
+      const res = await fetch((activeApiBase || '') + `/api/v1/bots/${botId}/appointments`);
+      const apps = await res.json();
+      if (!res.ok) throw new Error(apps.error || 'Error al listar turnos');
+
+      if (!apps || apps.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8">No hay turnos agendados para este bot.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = apps.map(a => {
+        const dateStr = a.start_time ? new Date(a.start_time).toLocaleString() : '';
+        return `<tr>
+          <td><strong>#${a.id}</strong></td>
+          <td style="font-size: 11px;">${dateStr}</td>
+          <td>${a.customer_name || '-'}</td>
+          <td><code>${a.customer_phone || '-'}</code></td>
+          <td><strong>${a.service}</strong></td>
+          <td>${a.duration_minutes || 30} min</td>
+          <td style="font-size: 11px;">${a.notes || '-'}</td>
+          <td><span class="badge badge-success">${a.status}</span></td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="8" style="color: red;">Error: ${err.message}</td></tr>`;
     }
   }
 

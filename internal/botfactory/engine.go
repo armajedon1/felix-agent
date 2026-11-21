@@ -145,6 +145,26 @@ func (m *Manager) DeleteBot(id string) error {
 	return m.storage.DeleteBot(id)
 }
 
+func (m *Manager) ListBotSessions(botID string) ([]SessionSummary, error) {
+	return m.storage.ListBotSessions(botID)
+}
+
+func (m *Manager) GetBotConversation(botID, sessionID string) ([]ChatMessage, error) {
+	return m.storage.GetBotConversation(botID, sessionID)
+}
+
+func (m *Manager) GetBotDBInfo(botID string) (*BotDBInfo, error) {
+	return m.storage.GetBotDBInfo(botID)
+}
+
+func (m *Manager) ListBotOrders(botID string, limit int) ([]OrderRecord, error) {
+	return m.storage.ListOrders(botID, limit)
+}
+
+func (m *Manager) ListBotAppointments(botID string, limit int) ([]AppointmentRecord, error) {
+	return m.storage.ListAppointments(botID, limit)
+}
+
 func (m *Manager) Chat(ctx context.Context, botID, sessionID, userMsg string) (*ChatResult, error) {
 	spec, err := m.storage.GetBot(botID)
 	if err != nil {

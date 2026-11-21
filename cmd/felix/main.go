@@ -56,11 +56,22 @@ func main() {
 
 	// Si NO es modo servidor explicito, la ejecucion va directamente al CLI interactivo / Desktop / Web
 	if !isServerMode {
-		cfgPath := "config.json"
-		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		cfgPath := ""
+		cleanArgs := []string{}
+		for i := 1; i < len(os.Args); i++ {
+			if (os.Args[i] == "--config" || os.Args[i] == "-c") && i+1 < len(os.Args) {
+				cfgPath = os.Args[i+1]
+				i++
+			} else {
+				cleanArgs = append(cleanArgs, os.Args[i])
+			}
+		}
+
+		if cfgPath == "" {
 			for _, candidate := range []string{
 				"/home/matias/felix-server/config.json",
 				"/home/matias/felix-go/config.json",
+				"config.json",
 				filepath.Join(os.Getenv("HOME"), ".config/felix/config.json"),
 			} {
 				if _, sErr := os.Stat(candidate); sErr == nil {
@@ -70,11 +81,7 @@ func main() {
 			}
 		}
 
-		args := []string{}
-		if len(os.Args) > 1 {
-			args = os.Args[1:]
-		}
-		os.Exit(cli.RunCLI(args, cfgPath))
+		os.Exit(cli.RunCLI(cleanArgs, cfgPath))
 	}
 
 	// Reconfigurar argumentos para el modo servidor daemon

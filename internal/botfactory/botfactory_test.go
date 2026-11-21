@@ -336,3 +336,117 @@ func TestBotNumbersCollisionAndLogs(t *testing.T) {
 		t.Errorf("mensaje de log inesperado: %s", logs[0].Message)
 	}
 }
+
+func TestIndividualBotDatabaseAndConversations(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "bots_individual_test.db")
+
+	store, err := NewStorage(dbPath)
+	if err != nil {
+		t.Fatalf("error creando storage: %v", err)
+	}
+	defer store.Close()
+
+	bot := &BotSpec{
+		ID:          "pizzeria-test",
+		Name:        "Pizzeria Test",
+		Type:        TypeOrderTaking,
+		Status:      "active",
+		PhoneNumber: "+5491199998888",
+	}
+	if err := store.SaveBot(bot); err != nil {
+		t.Fatalf("error guardando bot: %v", err)
+	}
+
+	msg1 := &ChatMessage{
+		BotID:     "pizzeria-test",
+		SessionID: "+5491111112222",
+		Role:      "user",
+		Content:   "Hola quiero una pizza",
+	}
+	if err := store.SaveMessage(msg1); err != nil {
+		t.Fatalf("error guardando mensaje 1: %v", err)
+	}
+
+	msg2 := &ChatMessage{
+		BotID:     "pizzeria-test",
+		SessionID: "+5491111112222",
+		Role:      "assistant",
+		Content:   "Claro, de que sabor?",
+	}
+	if err := store.SaveMessage(msg2); err != nil {
+		t.Fatalf("error guardando mensaje 2: %v", err)
+	}
+
+	msg3 := &ChatMessage{
+		BotID:     "pizzeria-test",
+		SessionID: "+5491133334444",
+		Role:      "user",
+		Content:   "Tienen delivery?",
+	}
+	if err := store.SaveMessage(msg3); err != nil {
+		t.Fatalf("error guardando mensaje 3: %v", err)
+	}
+
+	sessions, err := store.ListBotSessions("pizzeria-test")
+	if err != nil || len(sessions) != 2 {
+		t.Fatalf("se esperaban 2 sesiones, obtenidas %d: %v", len(sessions), err)
+	}
+
+	chat, err := store.GetBotConversation("pizzeria-test", "+5491111112222")
+	if err != nil || len(chat) != 2 {
+		t.Fatalf("se esperaban 2 mensajes en la conversacion, obtenidos %d: %v", len(chat), err)
+	}
+	if chat[0].Role != "user" || chat[1].Role != "assistant" {
+		t.Errorf("roles inesperados en chat: %s, %s", chat[0].Role, chat[1].Role)
+	}
+
+	order := &OrderRecord{
+		BotID:           "pizzeria-test",
+		CustomerPhone:   "+5491111112222",
+		CustomerName:    "Juan Perez",
+		DeliveryAddress: "Calle Falsa 123",
+		PaymentMethod:   "efectivo",
+		Total:           12500,
+		Status:          "confirmed",
+		Items: []OrderItem{
+			{CatalogItemID: "piz-fug", Name: "Fugazzeta", Quantity: 1, UnitPrice: 9500, Subtotal: 9500},
+			{CatalogItemID: "beb-coc", Name: "Coca Cola", Quantity: 1, UnitPrice: 3000, Subtotal: 3000},
+		},
+	}
+	orderID, err := store.SaveOrder(order)
+	if err != nil || orderID == 0 {
+		t.Fatalf("error guardando pedido atomico: %v", err)
+	}
+
+	orders, err := store.ListOrders("pizzeria-test", 10)
+	if err != nil || len(orders) != 1 {
+		t.Fatalf("se esperaba 1 pedido, obtenidos %d", len(orders))
+	}
+	if len(orders[0].Items) != 2 {
+		t.Errorf("se esperaban 2 items normalizados, obtenidos %d", len(orders[0].Items))
+	}
+
+	botDBPath := filepath.Join(tmpDir, "bots", "pizzeria-test", "data.db")
+	if _, err := os.Stat(botDBPath); os.IsNotExist(err) {
+		t.Fatalf("el archivo de base individual no existe en %s", botDBPath)
+	}
+
+	dbInfo, err := store.GetBotDBInfo("pizzeria-test")
+	if err != nil {
+		t.Fatalf("error obteniendo db info: %v", err)
+	}
+	if dbInfo.JournalMode != "wal" {
+		t.Errorf("se esperaba modo wal, obtenido %s", dbInfo.JournalMode)
+	}
+	if dbInfo.TotalOrders != 1 || dbInfo.TotalMessages != 3 {
+		t.Errorf("conteo inesperado: orders=%d, messages=%d", dbInfo.TotalOrders, dbInfo.TotalMessages)
+	}
+
+	if err := store.DeleteBot("pizzeria-test"); err != nil {
+		t.Fatalf("error eliminando bot: %v", err)
+	}
+	if _, err := os.Stat(botDBPath); !os.IsNotExist(err) {
+		t.Errorf("el archivo de base individual no fue eliminado tras DeleteBot")
+	}
+}

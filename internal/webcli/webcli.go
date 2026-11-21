@@ -607,6 +607,77 @@ func (s *Server) handleBotRoute(w http.ResponseWriter, r *http.Request) {
 		_ = s.storage.SetAvatar(botID, publicPath)
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "avatar_url": publicPath})
 
+	case "detail":
+		bot, err := s.storage.GetBot(botID)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		stats, _ := s.storage.GetStats(botID)
+		dbInfo, _ := s.storage.GetBotDBInfo(botID)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"bot":     bot,
+			"stats":   stats,
+			"db_info": dbInfo,
+		})
+
+	case "sessions":
+		sessions, err := s.storage.ListBotSessions(botID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(sessions)
+
+	case "conversations", "conv":
+		if len(parts) >= 3 && parts[2] != "" {
+			sessionID := parts[2]
+			msgs, err := s.storage.GetBotConversation(botID, sessionID)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(msgs)
+			return
+		}
+		sessions, err := s.storage.ListBotSessions(botID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(sessions)
+
+	case "orders":
+		orders, err := s.storage.ListOrders(botID, 100)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(orders)
+
+	case "appointments":
+		apps, err := s.storage.ListAppointments(botID, 100)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(apps)
+
+	case "db":
+		dbInfo, err := s.storage.GetBotDBInfo(botID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(dbInfo)
+
 	default:
 		http.Error(w, `{"error":"accion no reconocida"}`, http.StatusBadRequest)
 	}
