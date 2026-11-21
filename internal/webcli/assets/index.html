@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Felix Desktop - Consola de Administracion y Chat</title>
+  <title>Felix Server - Consola de Administracion y Control</title>
   <style>
     :root {
       --bg-body: #0f172a;
@@ -38,8 +38,8 @@
       user-select: none;
     }
 
-    /* Desktop Window Layout */
-    .desktop-app {
+    /* Web Console Layout */
+    .server-app {
       display: flex;
       height: 100vh;
       width: 100vw;
@@ -742,13 +742,13 @@
 </head>
 <body>
 
-<div class="desktop-app">
+<div class="server-app">
   <!-- SIDEBAR IZQUIERDO -->
   <aside class="app-sidebar">
     <div class="sidebar-header">
       <div class="brand-logo">FX</div>
       <div>
-        <div class="brand-title">FELIX DESKTOP</div>
+        <div class="brand-title">FELIX SERVER</div>
         <div class="brand-subtitle">Panel de Control & Chat</div>
       </div>
     </div>
@@ -1621,7 +1621,7 @@
     container.innerHTML = '<div style="color:#94a3b8; font-size:12px; text-align:center; padding:20px;">Cargando mensajes...</div>';
 
     try {
-      const res = await fetch((activeApiBase || '') + `/api/v1/chat/history?bot_id=${encodeURIComponent(botId)}&session_id=desktop-session`);
+      const res = await fetch((activeApiBase || '') + `/api/v1/chat/history?bot_id=${encodeURIComponent(botId)}&session_id=web-session`);
       const msgs = await res.json();
       container.innerHTML = '';
 
@@ -1706,7 +1706,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bot_id: currentChatBotId,
-          session_id: 'desktop-session',
+          session_id: 'web-session',
           message: text
         })
       });
@@ -1734,7 +1734,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bot_id: currentChatBotId,
-          session_id: 'desktop-session'
+          session_id: 'web-session'
         })
       });
       loadChatHistory(currentChatBotId);

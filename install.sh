@@ -62,30 +62,8 @@ if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
     fi
 fi
 
-# 8. Verificacion de soporte para ventana de escritorio nativa (Linux)
-if [ "$OS" = "Linux" ]; then
-    if ! command -v chromium &>/dev/null && ! command -v google-chrome &>/dev/null && ! python3 -c "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk, WebKit2" &>/dev/null 2>&1; then
-        echo "[Aviso] Para ejecutar 'felix desktop' como ventana nativa independiente sin abrir navegador:"
-        echo "        sudo apt update && sudo apt install -y gir1.2-webkit2-4.1"
-    fi
-fi
-
-# 9. Integracion de escritorio (Linux Desktop)
-DESKTOP_DIR="$HOME/.local/share/applications"
-if [ -d "$DESKTOP_DIR" ] || [ -n "${XDG_CURRENT_DESKTOP:-}" ]; then
-    mkdir -p "$DESKTOP_DIR"
-    cat <<EOF > "$DESKTOP_DIR/felix.desktop"
-[Desktop Entry]
-Name=Felix Desktop
-Comment=Centro de Control, Chat y Administracion de Bots
-Exec=$TARGET_DIR/felix desktop
-Icon=utilities-terminal
-Terminal=false
-Type=Application
-Categories=Development;Utility;
-EOF
-    echo "Lanzador de escritorio registrado en $DESKTOP_DIR/felix.desktop"
-fi
+# 8. Limpieza de artefactos heredados de escritorio
+rm -f "$HOME/.local/share/applications/felix.desktop" 2>/dev/null || true
 
 echo "=============================================================="
 echo "         INSTALACION COMPLETADA EXITOSAMENTE                  "
@@ -93,14 +71,13 @@ echo "=============================================================="
 echo " El ejecutable 'felix' ya esta disponible en su terminal."
 echo ""
 echo " Opciones recomendadas para comenzar:"
-echo "   felix                  -> Menu interactivo principal"
-echo "   felix chat             -> Chat interactivo con Felix Core y bots"
-echo "   felix onboard          -> Asistente de configuracion de proveedor IA"
-echo "   felix desktop          -> Ventana de escritorio con modulo de chat y ABM"
-echo "   felix web              -> Consola web en navegador (puerto 8056)"
-echo "   felix status           -> Diagnostico de estado y modelos (doctor)"
-echo "   felix bots             -> Administrador de catalogo de bots"
-echo "   felix server           -> Iniciar servicio en segundo plano (daemon)"
+echo "   felix                  -> Menu interactivo principal de administracion"
+echo "   felix chat             -> Consola de chat directo con el servidor"
+echo "   felix onboard          -> Asistente de configuracion de proveedor LLM"
+echo "   felix web              -> Consola web ligera embebida (puerto 8056)"
+echo "   felix status           -> Diagnostico de salud del servidor (doctor)"
+echo "   felix bots             -> Administrador de bots y conversaciones"
+echo "   felix server           -> Iniciar demonio de servidor en segundo plano"
 echo "=============================================================="
 
 # Iniciar asistente de configuracion si la terminal es interactiva y no esta configurado

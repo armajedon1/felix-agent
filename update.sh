@@ -36,26 +36,20 @@ git pull origin main
 echo "Compilando nueva version..."
 go build -o bin/felix cmd/felix/main.go
 
+# Instalar binario en felix-server y .local/bin
+SERVER_BIN_DIR="$HOME/felix-server/bin"
+if [ -d "$SERVER_BIN_DIR" ]; then
+    install -m 755 bin/felix "$SERVER_BIN_DIR/felix"
+    echo "[OK] Binario instalado en $SERVER_BIN_DIR/felix"
+fi
+
 TARGET_DIR="$HOME/.local/bin"
 mkdir -p "$TARGET_DIR"
 install -m 755 bin/felix "$TARGET_DIR/felix"
 echo "[OK] Binario instalado en $TARGET_DIR/felix"
 
-# Actualizar lanzador de escritorio
-DESKTOP_FILE="$HOME/.local/share/applications/felix.desktop"
-if [ -f "$DESKTOP_FILE" ] || [ -n "${XDG_CURRENT_DESKTOP:-}" ]; then
-    mkdir -p "$(dirname "$DESKTOP_FILE")"
-    cat <<EOF > "$DESKTOP_FILE"
-[Desktop Entry]
-Name=Felix Desktop
-Comment=Centro de Control, Chat y Administracion de Bots
-Exec=$TARGET_DIR/felix desktop
-Icon=utilities-terminal
-Terminal=false
-Type=Application
-Categories=Development;Utility;
-EOF
-fi
+# Limpieza de lanzadores de escritorio obsoletos
+rm -f "$HOME/.local/share/applications/felix.desktop" 2>/dev/null || true
 
 # Reiniciar servicio PM2 si existe
 if command -v pm2 &>/dev/null; then

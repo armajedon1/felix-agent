@@ -294,12 +294,12 @@ func RunOnboardingWizard(configPath string) int {
 	// PASO 3: CANALES DE COMUNICACION
 	fmt.Println("PASO 3: CANALES DE COMUNICACION")
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Println("  [1] Solo Terminal y Aplicacion de Escritorio (Recomendado para evaluacion)")
+	fmt.Println("  [1] Solo Terminal y Consola Web (Recomendado para administracion de servidor)")
 	fmt.Println("  [2] Habilitar WhatsApp (solicitara escanear codigo QR al iniciar)")
 	fmt.Println("  [3] Habilitar Telegram (solicitara Token de BotFather)")
 	fmt.Println("  [4] Habilitar ambos canales (WhatsApp y Telegram)")
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Print("Seleccione una opcion [1-4] (Enter para Terminal y Desktop): ")
+	fmt.Print("Seleccione una opcion [1-4] (Enter para Terminal y Web): ")
 
 	chanOpt, _ := reader.ReadString('\n')
 	chanOpt = strings.TrimSpace(chanOpt)
@@ -371,7 +371,7 @@ func RunOnboardingWizard(configPath string) int {
 	fmt.Println("Para iniciar Felix en cualquier momento ejecuta:")
 	fmt.Println("  felix          -> Menu interactivo principal")
 	fmt.Println("  felix chat     -> Chat en consola con Felix o bots")
-	fmt.Println("  felix desktop  -> Ventana de aplicacion de escritorio")
+	fmt.Println("  felix web      -> Consola web ligera embebida (puerto 8056)")
 	return 0
 }
 

@@ -7,14 +7,14 @@ import (
 )
 
 func TestIsCLICommand(t *testing.T) {
-	valid := []string{"cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help"}
+	valid := []string{"cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "version", "-v", "--version", "help", "-h", "--help"}
 	for _, cmd := range valid {
 		if !IsCLICommand(cmd) {
 			t.Errorf("se esperaba que '%s' fuera reconocido como comando CLI", cmd)
 		}
 	}
 
-	invalid := []string{"foo", "bar", "--invalid", "start", "daemon"}
+	invalid := []string{"foo", "bar", "--invalid", "start", "daemon", "desktop", "gui"}
 	for _, cmd := range invalid {
 		if IsCLICommand(cmd) {
 			t.Errorf("no se esperaba que '%s' fuera reconocido como comando CLI", cmd)

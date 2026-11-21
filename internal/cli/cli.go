@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -33,7 +32,7 @@ import (
 
 func IsCLICommand(arg string) bool {
 	switch strings.ToLower(arg) {
-	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "desktop", "gui", "version", "-v", "--version", "help", "-h", "--help", "onboard", "setup", "doctor", "update", "upgrade":
+	case "cli", "status", "logs", "conv", "conversations", "sessions", "config", "bots", "bot", "chat", "db", "numbers", "number", "apis", "api", "auth", "web", "version", "-v", "--version", "help", "-h", "--help", "onboard", "setup", "doctor", "update", "upgrade":
 		return true
 	default:
 		return false
@@ -50,7 +49,7 @@ func PrintBanner() {
 	fmt.Println(`          ╚═╝     ╚══════╝╚══════╝╚═╝╚═╝  ╚═╝`)
 	fmt.Println(`          A G E N T  //  S W E  &  D E V O P S`)
 	fmt.Println("================================================================================")
-	fmt.Println(" Modo: Consola CLI Interactiva (Workstation & Evaluacion Local)")
+	fmt.Println(" Modo: Consola de Administracion y Control (Servidor Felix)")
 	fmt.Println(" Version: v2.3.0 | Runtime: Go Nativo (Sin dependencias externas)")
 	fmt.Println(" Soberania: Republica Argentina [ARG] | Licencia: MIT Open Source")
 	fmt.Println(" Repositorio: https://github.com/m-leiva/felix-agent")
@@ -58,28 +57,23 @@ func PrintBanner() {
 }
 
 func printQuickMenu() {
-	deviceMode := "Estacion de Trabajo (PC)"
-	if _, err := os.Stat("/etc/rpi-issue"); err == nil {
-		deviceMode = "Servidor Linux / Homelab"
-	}
-	fmt.Printf(" Dispositivo detectado: %s (%s/%s)\n", deviceMode, runtime.GOOS, runtime.GOARCH)
+	fmt.Printf(" Servidor Felix: Linux (%s/%s) | Estado: Operativo\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Println("================================================================================")
 	fmt.Println(" Flujo Principal:")
-	fmt.Println("   [1] Iniciar Chat Interactivo CLI (Felix Core y Asistentes)")
+	fmt.Println("   [1] Iniciar Chat Interactivo con el Servidor (Felix Core y Asistentes)")
 	fmt.Println("   [2] Asistente de Configuracion y Proveedor LLM (Onboarding / Setup)")
-	fmt.Println("   [3] Abrir Ventana de Escritorio (Desktop Window & Chat)")
-	fmt.Println("   [4] Iniciar Consola Web Embebida (http://localhost:8056)")
+	fmt.Println("   [3] Iniciar Consola Web Embebida (http://localhost:8056)")
 	fmt.Println()
-	fmt.Println(" Modulos y Diagnostico:")
-	fmt.Println("   [5] Diagnostico de Estado y Salud (Doctor / Status)")
-	fmt.Println("   [6] Administrar Catalogo de Bots (ABM y Configuracion)")
-	fmt.Println("   [7] Matriz de Lineas Telefonicas (felix numbers)")
-	fmt.Println("   [8] Administrar Bases de Datos SQLite (felix db)")
-	fmt.Println("   [9] Auditoria y Logs de Bots (felix logs)")
+	fmt.Println(" Modulos del Servidor:")
+	fmt.Println("   [4] Diagnostico de Estado y Salud (Doctor / Status)")
+	fmt.Println("   [5] Administrar Catalogo de Bots y Conversaciones (felix bots)")
+	fmt.Println("   [6] Matriz de Lineas y Canales de Comunicacion (felix numbers)")
+	fmt.Println("   [7] Administrar Bases de Datos SQLite WAL (felix db)")
+	fmt.Println("   [8] Auditoria y Logs del Servidor (felix logs)")
 	fmt.Println("   [u] Comprobar y Aplicar Actualizaciones (felix update)")
 	fmt.Println("   [0] Salir")
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Print(" Seleccione una opcion [0-9/u] o ingrese un comando directo (o 'help'): ")
+	fmt.Print(" Seleccione una opcion [0-8/u] o ingrese un comando directo (o 'help'): ")
 }
 
 func clearScreen() {
@@ -118,31 +112,29 @@ func RunInteractiveMenu(configPath string) int {
 			return CmdChat(parts[1:], configPath)
 		case "2", "setup", "onboard", "config":
 			CmdOnboard(parts[1:], configPath)
-		case "3", "desktop", "gui":
-			CmdDesktop(parts[1:], configPath)
-		case "4", "web":
+		case "3", "web":
 			CmdWeb(parts[1:], configPath)
-		case "5", "status", "doctor":
+		case "4", "status", "doctor":
 			CmdStatus(configPath)
-		case "6", "bots", "bot":
+		case "5", "bots", "bot":
 			sub := []string{}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdBots(sub, configPath)
-		case "7", "numbers", "number":
+		case "6", "numbers", "number":
 			sub := []string{}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdNumbers(sub, configPath)
-		case "8", "db":
+		case "7", "db":
 			sub := []string{"status"}
 			if len(parts) > 1 {
 				sub = parts[1:]
 			}
 			CmdDB(sub, configPath)
-		case "9", "logs":
+		case "8", "logs":
 			sub := []string{"bots"}
 			if len(parts) > 1 {
 				sub = parts[1:]
@@ -207,8 +199,6 @@ func RunCLI(args []string, configPath string) int {
 		return CmdAuth(subArgs, configPath)
 	case "web":
 		return CmdWeb(subArgs, configPath)
-	case "desktop", "gui":
-		return CmdDesktop(subArgs, configPath)
 	case "chat":
 		return CmdChat(subArgs, configPath)
 	case "version", "-v", "--version":
@@ -234,10 +224,9 @@ func PrintHelp() {
 	PrintBanner()
 	fmt.Println("Uso: felix <comando> [argumentos...]")
 	fmt.Println()
-	fmt.Println("Comandos para PC y Servidor:")
+	fmt.Println("Comandos de Administracion del Servidor:")
 	fmt.Println("  cli                     Inicia sesion interactiva con dibujo ASCII en terminal")
 	fmt.Println("  chat [peticion]         Abre consola de chat o ejecuta un prompt directo")
-	fmt.Println("  desktop / gui           Abre ventana de escritorio conectada a local o servidor")
 	fmt.Println("  web                     Inicia consola web ligera embebida en puerto 8056")
 	fmt.Println("  status                  Muestra el panel de salud, telemetria y estado en vivo")
 	fmt.Println("  bots [subcomando]       Gestor de bots (list, view, convs, conv, orders, db, start, stop)")
@@ -265,7 +254,6 @@ func PrintHelp() {
 	fmt.Println("  felix logs bot pizzeria-napoli -f")
 	fmt.Println("  felix db status")
 	fmt.Println("  felix web")
-	fmt.Println("  felix desktop")
 	fmt.Println("================================================================================")
 }
 
@@ -1734,128 +1722,6 @@ func CmdWeb(args []string, configPath string) int {
 	return 0
 }
 
-func CmdDesktop(args []string, configPath string) int {
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		fmt.Printf("Error cargando configuracion: %v\n", err)
-		return 1
-	}
-
-	_ = os.MkdirAll(cfg.DataDir, 0755)
-	botsDBPath := filepath.Join(cfg.DataDir, "bots.db")
-	store, err := botfactory.NewStorage(botsDBPath)
-	if err != nil {
-		fmt.Printf("Error abriendo base de bots: %v\n", err)
-		return 1
-	}
-	defer store.Close()
-
-	port := 8056
-	srv := webcli.NewServer(port, store, cfg, cfg.DataDir)
-	actualPort, err := srv.Start()
-	if err != nil {
-		fmt.Printf("Error iniciando servicio para ventana desktop: %v\n", err)
-		return 1
-	}
-
-	targetURL := fmt.Sprintf("http://localhost:%d", actualPort)
-	PrintBanner()
-	fmt.Printf("Iniciando ventana de escritorio Felix en %s...\n", targetURL)
-
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		openAppWindow(targetURL)
-	}()
-
-	fmt.Println("Ventana de escritorio activa. Presione Ctrl+C en esta terminal para cerrarla.")
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
-
-	_ = srv.Stop()
-	return 0
-}
-
-func openAppWindow(url string) {
-	tempProfile := filepath.Join(os.TempDir(), "felix-desktop-profile")
-	_ = os.MkdirAll(tempProfile, 0755)
-
-	if runtime.GOOS == "windows" {
-		edgeCommands := [][]string{
-			{"msedge", "--app=" + url, "--user-data-dir=" + tempProfile, "--window-size=1280,850", "--no-first-run"},
-			{"chrome", "--app=" + url, "--user-data-dir=" + tempProfile, "--window-size=1280,850", "--no-first-run"},
-			{"cmd", "/c", "start", url},
-		}
-		for _, cmd := range edgeCommands {
-			if _, err := exec.LookPath(cmd[0]); err == nil {
-				if err := exec.Command(cmd[0], cmd[1:]...).Start(); err == nil {
-					return
-				}
-			}
-		}
-		_ = exec.Command("cmd", "/c", "start", url).Start()
-		return
-	}
-
-	// 1. Probar ventana nativa GTK WebKit (formato de aplicacion de escritorio sin navegador web)
-	gtkScript := filepath.Join(os.TempDir(), "felix_desktop_window.py")
-	gtkPyCode := `import sys, os
-try:
-    import gi
-    try:
-        gi.require_version('Gtk', '3.0')
-        gi.require_version('WebKit2', '4.1')
-    except Exception:
-        gi.require_version('Gtk', '3.0')
-        gi.require_version('WebKit2', '4.0')
-    from gi.repository import Gtk, WebKit2
-    class FelixWindow(Gtk.Window):
-        def __init__(self, target_url):
-            super().__init__(title="Felix - Centro de Control y Chat")
-            self.set_default_size(1280, 850)
-            self.set_position(Gtk.WindowPosition.CENTER)
-            self.connect("destroy", Gtk.main_quit)
-            webview = WebKit2.WebView()
-            webview.load_uri(target_url)
-            self.add(webview)
-            self.show_all()
-    if len(sys.argv) > 1:
-        app = FelixWindow(sys.argv[1])
-        Gtk.main()
-        sys.exit(0)
-except Exception:
-    sys.exit(1)
-`
-	_ = os.WriteFile(gtkScript, []byte(gtkPyCode), 0755)
-	if _, err := exec.LookPath("python3"); err == nil {
-		checkCmd := exec.Command("python3", "-c", "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk, WebKit2")
-		if err := checkCmd.Run(); err == nil {
-			if err := exec.Command("python3", gtkScript, url).Start(); err == nil {
-				return
-			}
-		}
-	}
-
-	// 2. Probar Chromium/Chrome/Brave/Edge en modo aplicacion de escritorio (--app, sin tabs ni barra de url)
-	appCommands := [][]string{
-		{"chromium", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
-		{"google-chrome", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
-		{"brave-browser", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
-		{"microsoft-edge", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
-		{"chromium-browser", "--app=" + url, "--user-data-dir=" + tempProfile, "--class=FelixDesktop", "--window-size=1280,850", "--no-first-run", "--no-default-browser-check"},
-		{"firefox", "--new-window", url},
-		{"xdg-open", url},
-	}
-
-	for _, cmd := range appCommands {
-		if _, err := exec.LookPath(cmd[0]); err == nil {
-			if err := exec.Command(cmd[0], cmd[1:]...).Start(); err == nil {
-				return
-			}
-		}
-	}
-}
-
 func sendBotChatMessage(endpoint, sessionID, message string) (string, error) {
 	reqBody := map[string]string{
 		"session_id": sessionID,
@@ -2041,7 +1907,7 @@ func CmdChat(args []string, configPath string) int {
 	fmt.Printf("Modelo LLM: %s | Workspace: %s\n", cfg.Model, cfg.WorkspaceDir)
 	fmt.Printf("Herramientas activas: %d registradas\n", len(reg.GetOpenAISchemas()))
 	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Println("Consola de Chat y Evaluacion (PC y Servidores)")
+	fmt.Println("Consola de Chat Directo con el Servidor")
 	fmt.Println("Interactua con Felix Core o con cualquiera de tus bots especializados.")
 	fmt.Println("Comandos especiales:")
 	fmt.Println("  :bots        Lista todos los bots y lineas registradas")

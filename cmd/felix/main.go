@@ -54,7 +54,7 @@ func main() {
 		}
 	}
 
-	// Si NO es modo servidor explicito, la ejecucion va directamente al CLI interactivo / Desktop / Web
+	// Si NO es modo servidor daemon explicito, la ejecucion va directamente a la consola CLI / Web
 	if !isServerMode {
 		cfgPath := ""
 		cleanArgs := []string{}

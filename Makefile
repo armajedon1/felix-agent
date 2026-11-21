@@ -1,4 +1,4 @@
-.PHONY: all build build-all build-linux-amd64 build-linux-arm64 build-windows-amd64 run desktop web server setup update test install clean
+.PHONY: all build build-all build-linux-amd64 build-linux-arm64 build-windows-amd64 run web server setup update test install clean
 
 all: build
 
@@ -27,9 +27,6 @@ install: build
 
 run: build
 	./bin/felix
-
-desktop: build
-	./bin/felix desktop
 
 web: build
 	./bin/felix web

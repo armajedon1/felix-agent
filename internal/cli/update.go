@@ -107,7 +107,13 @@ func CmdUpdate(args []string, configPath string) int {
 		return 1
 	}
 
-	// 7. Instalar en ~/.local/bin/felix
+	// 7. Instalar binario
+	serverBinDir := filepath.Join(os.Getenv("HOME"), "felix-server", "bin")
+	if _, err := os.Stat(serverBinDir); err == nil {
+		serverBin := filepath.Join(serverBinDir, "felix")
+		_ = exec.Command("install", "-m", "755", binPath, serverBin).Run()
+	}
+
 	targetDir := filepath.Join(os.Getenv("HOME"), ".local", "bin")
 	_ = os.MkdirAll(targetDir, 0755)
 	targetBin := filepath.Join(targetDir, "felix")
@@ -118,6 +124,9 @@ func CmdUpdate(args []string, configPath string) int {
 	} else {
 		fmt.Printf("[OK] Binario instalado exitosamente en %s\n", targetBin)
 	}
+
+	// Limpiar lanzadores de escritorio obsoletos
+	_ = os.Remove(filepath.Join(os.Getenv("HOME"), ".local", "share", "applications", "felix.desktop"))
 
 	// 8. Reiniciar PM2 si aplica
 	if _, err := exec.LookPath("pm2"); err == nil {

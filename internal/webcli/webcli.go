@@ -1411,7 +1411,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.SessionID == "" {
-		req.SessionID = "desktop-session"
+		req.SessionID = "web-session"
 	}
 	if req.BotID == "" {
 		req.BotID = "felix"
@@ -1520,7 +1520,7 @@ func (s *Server) handleChatHistory(w http.ResponseWriter, r *http.Request) {
 	botID := r.URL.Query().Get("bot_id")
 	sessionID := r.URL.Query().Get("session_id")
 	if sessionID == "" {
-		sessionID = "desktop-session"
+		sessionID = "web-session"
 	}
 	if botID == "" {
 		botID = "felix"
@@ -1581,7 +1581,7 @@ func (s *Server) handleChatClear(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if req.SessionID == "" {
-		req.SessionID = "desktop-session"
+		req.SessionID = "web-session"
 	}
 
 	if req.BotID == "felix" {
